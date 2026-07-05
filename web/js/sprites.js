@@ -971,6 +971,26 @@ const Sprites = (() => {
     '................',
   ]);
 
+  // Solaranlage (ab 1994)
+  const SOLAR = art([
+    '................',
+    '.KKKKKK..KKKKKK.',
+    '.KccbbK..KccbbK.',
+    '.KbbbbK..KbbbbK.',
+    '.KKKKKK..KKKKKK.',
+    '...Km......Km...',
+    '.KKKKKK..KKKKKK.',
+    '.KccbbK..KccbbK.',
+    '.KbbbbK..KbbbbK.',
+    '.KKKKKK..KKKKKK.',
+    '...Km......Km...',
+    '................',
+    '.eyeeleeeeepeee.',
+    '................',
+    '.EEEEEEEEEEEEEE.',
+    '................',
+  ]);
+
   // ---------- Berater-Porträts (16x16) ----------
   const SKIN = { H: '#e8b58a', h2: '#c98f66' };
   const ADV_FINANCE = art([
@@ -1097,6 +1117,7 @@ const Sprites = (() => {
     store.hospital = HOSPITAL;
     store.wind = [WIND0, WIND1];
     store.coal = COAL;
+    store.solar = SOLAR;
     store.stadium = stadiumSprite();
     store.wtower = WTOWER;
     store.pump = PUMP;

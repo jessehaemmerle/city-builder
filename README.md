@@ -94,6 +94,29 @@ bring deine Stadt vom Dorf zur Metropole.
   - *Grüne Metropole*: 2.000 Einwohner + 55% Zufriedenheit ohne Kohlekraft in 10 Jahren.
   - *Die Pleite-Stadt*: Übernimm eine verschuldete Bestandsstadt und saniere sie.
 
+### Alleinstellungsmerkmale
+
+- **Stadt als Link teilen**: Dank RLE-Kompression passt die ganze Stadt in eine
+  URL (`…#city=…`, ~6 KB). Empfänger öffnet den Link — fertig. Kein Server,
+  kein Account.
+- **📟 RETRO-NET BBS**: Ein 90er-Mailbox-Terminal (mit Modem-Einwahlgeräusch!)
+  zum Veröffentlichen und Einwählen von Stadt-Codes, mit lokaler Rekordliste
+  und der Zeitung.
+- **Benannte Bürger:innen**: Jedes bewohnte Haus hat einen deterministisch
+  generierten Beispiel-Haushalt — Name, Alter, Arbeitsplatz, echter Pendelweg
+  aus der Wegfindung und aktuelle Laune. Autos anklicken verrät, wer da fährt.
+- **📰 Retropolis Kurier**: Zeitungs-Schlagzeilen aus echten Sim-Ereignissen
+  („STAU-REKORD: Herta Kowalski pendelt 19 Felder").
+- **Epochen**: Die Zeit verändert das Spiel — 1994 kommt die Solaranlage,
+  1998 die CO₂-Abgabe auf Kohle, ab 2000 senken E-Autos (mit grünem Lämpchen)
+  die Abgase, 2002 werden Solarmodule stärker.
+- **📸 Foto-Modus**: Ein Klick rendert die Stadt als „Gruß aus …!"-Postkarte
+  mit Briefmarke und Poststempel — als PNG teilbar.
+- **Cheat-Codes wie früher**: `geld`, `ufo`, `sturm`, `disco` und der
+  Konami-Code — aber die Statistik merkt sich, dass gemogelt wurde. 😈
+
+![Postkarte](docs/screenshot-postcard.png)
+
 ### Moderne Features im Retro-Gewand
 
 - Drag-Bau mit Live-Vorschau und Kostenanzeige, **Undo/Redo** (Strg+Z/Y)

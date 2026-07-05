@@ -14,7 +14,8 @@ const T_GRASS = 0, T_WATER = 1, T_SAND = 2, T_TREE = 3;
 const S_NONE = 0, S_ROAD = 1, S_WIRE = 2, S_RZONE = 3, S_CZONE = 4, S_IZONE = 5,
   S_PARK = 6, S_POLICE = 7, S_FIREDEP = 8, S_SCHOOL = 9, S_HOSPITAL = 10,
   S_WIND = 11, S_COAL = 12, S_STADIUM = 13, S_RUBBLE = 14,
-  S_RAIL = 15, S_WTOWER = 16, S_PUMP = 17, S_TOWNHALL = 18, S_MONUMENT = 19, S_CASINO = 20;
+  S_RAIL = 15, S_WTOWER = 16, S_PUMP = 17, S_TOWNHALL = 18, S_MONUMENT = 19, S_CASINO = 20,
+  S_SOLAR = 21;
 
 // Katalog. name = i18n-Key. Flags: bld, flam, drain, power, waterRange, needsWaterAdj
 const DEFS = {
@@ -38,6 +39,7 @@ const DEFS = {
   [S_TOWNHALL]: { name: 'b.townhall', cost: 1500, upkeep: 20,   size: 1, bld: 1, flam: 1, drain: 3, minPop: 500 },
   [S_MONUMENT]: { name: 'b.monument', cost: 1000, upkeep: 5,    size: 1, bld: 1, minPop: 2500 },
   [S_CASINO]:   { name: 'b.casino',   cost: 2000, upkeep: 0,    size: 1, bld: 1, flam: 1, drain: 4, minPop: 4000, income: 150 },
+  [S_SOLAR]:    { name: 'b.solar',    cost: 900,  upkeep: 8,    size: 1, bld: 1, power: 45, minYear: 1994 },
 };
 
 const MONTH_KEYS = ['m.jan', 'm.feb', 'm.mar', 'm.apr', 'm.mai', 'm.jun', 'm.jul', 'm.aug', 'm.sep', 'm.okt', 'm.nov', 'm.dez'];
@@ -100,6 +102,11 @@ class Sim {
     this.floodT = new Uint8Array(n);
     this.waterNear = new Uint8Array(n);
 
+    this.workOf = new Int32Array(n).fill(-1);      // Arbeitsweg-Ziel je Wohnhaus
+    this.commuteDist = new Int32Array(n).fill(-1); // Pendeldistanz je Wohnhaus
+
+    this.cityName = 'Retropolis';
+    this.cheated = false;
     this.money = BAL.START_MONEY;
     this.debt = 0;
     this.taxRate = BAL.DEMAND.TAX_NEUTRAL;
@@ -133,6 +140,8 @@ class Sim {
   isAnchor(i) { return this.st[i] !== S_NONE && (this.anchor[i] === i || this.anchor[i] === -1); }
   isBld(s) { return !!(DEFS[s] && DEFS[s].bld); }
   isNet(s) { return s === S_ROAD || s === S_RAIL; }
+  isPlant(s) { return s === S_WIND || s === S_COAL || s === S_SOLAR; }
+  solarPower() { return this.year >= BAL.ERA.SOLAR_UP_YEAR ? BAL.ERA.SOLAR_POWER2 : BAL.ERA.SOLAR_POWER; }
 
   markChanged(i) {
     if (!this.allChanged) {
@@ -214,6 +223,7 @@ class Sim {
     if (!def) return { ok: false, reason: 'err.unknown' };
     const size = def.size || 1;
     if (def.minPop && this.pop < def.minPop) return { ok: false, reason: 'err.minPop', params: { n: def.minPop } };
+    if (def.minYear && this.year < def.minYear) return { ok: false, reason: 'err.minYear', params: { y: def.minYear } };
     if (tool === S_COAL && this.scenario && this.scenario.noCoal)
       return { ok: false, reason: 'err.noCoal' };
     const overWater = tool === S_ROAD || tool === S_RAIL || tool === S_WIRE;
@@ -314,8 +324,9 @@ class Sim {
     const queue = [];
     for (let i = 0; i < w * h; i++) {
       const s = this.st[i];
-      if ((s === S_WIND || s === S_COAL) && this.isAnchor(i)) supply += DEFS[s].power;
-      if (s === S_WIND || s === S_COAL) { queue.push(i); this.powered[i] = 1; }
+      if (this.isPlant(s) && this.isAnchor(i))
+        supply += s === S_SOLAR ? this.solarPower() : DEFS[s].power;
+      if (this.isPlant(s)) { queue.push(i); this.powered[i] = 1; }
       if (s >= S_RZONE && s <= S_IZONE && this.lvl[i] > 0) need += 1 + this.lvl[i];
       if (DEFS[s] && DEFS[s].drain && this.isAnchor(i)) need += DEFS[s].drain;
     }
@@ -340,11 +351,11 @@ class Sim {
       const ratio = supply / need;
       const rr = mulberry(this.seed + this.day + this.month * 31);
       for (let i = 0; i < w * h; i++) {
-        if (this.powered[i] && this.st[i] !== S_WIND && this.st[i] !== S_COAL && rr() > ratio) this.powered[i] = 0;
+        if (this.powered[i] && !this.isPlant(this.st[i]) && rr() > ratio) this.powered[i] = 0;
       }
     } else if (supply === 0) {
       for (let i = 0; i < w * h; i++) {
-        if (this.st[i] !== S_WIND && this.st[i] !== S_COAL) this.powered[i] = 0;
+        if (!this.isPlant(this.st[i])) this.powered[i] = 0;
       }
     }
     this.dirtyPower = false;
@@ -435,18 +446,25 @@ class Sim {
       }
     }
     // 4) Pendlerfluss: jede Wohnzone läuft ihren kürzesten Weg zum Job ab
+    //    (Ziel und Distanz werden für die Bürger-Anzeige gemerkt)
     const flow = new Float32Array(n);
+    this.workOf.fill(-1);
+    this.commuteDist.fill(-1);
     for (let i = 0; i < n; i++) {
       if (this.st[i] !== S_RZONE || this.lvl[i] === 0) continue;
       let cur = this.accessPt[i];
       if (cur < 0 || dist[cur] < 0) continue;
+      this.commuteDist[i] = dist[cur];
       const load = this.lvl[i] * BAL.TRAFFIC.FLOW_PER_LVL;
       let steps = 0;
       while (cur >= 0 && dist[cur] > 0 && steps++ < BAL.TRAFFIC.MAX_PATH) {
         if (this.st[cur] === S_ROAD) flow[cur] += load; // Schienen schlucken Verkehr
         cur = parent[cur];
       }
-      if (cur >= 0 && this.st[cur] === S_ROAD) flow[cur] += load;
+      if (cur >= 0) {
+        this.workOf[i] = cur; // Zugangsfeld des erreichten Arbeitsplatzes
+        if (this.st[cur] === S_ROAD) flow[cur] += load;
+      }
     }
     for (let i = 0; i < n; i++) this.traffic[i] = Math.min(100, Math.round(flow[i]));
     // 5) Stau-Umfeld vorberechnen (statt teurem trafficNear pro Zone)
@@ -518,10 +536,14 @@ class Sim {
     const { w, h } = this;
     const B = BAL.POLLUTION;
     const src = new Float32Array(w * h);
+    // E-Autos ab 2000: Straßenverschmutzung sinkt Jahr für Jahr
+    const E = BAL.ERA;
+    const eCarF = this.year >= E.ECAR_YEAR
+      ? Math.max(E.ECAR_POLL_MIN, 1 - (this.year - E.ECAR_YEAR) * E.ECAR_POLL_DECAY) : 1;
     for (let i = 0; i < w * h; i++) {
       if (this.st[i] === S_IZONE) src[i] = B.IZONE_PER_LVL * this.lvl[i];
       else if (this.st[i] === S_COAL) src[i] = B.COAL;
-      else if (this.st[i] === S_ROAD) src[i] = B.ROAD_BASE + this.traffic[i] * B.ROAD_TRAFFIC_F;
+      else if (this.st[i] === S_ROAD) src[i] = (B.ROAD_BASE + this.traffic[i] * B.ROAD_TRAFFIC_F) * eCarF;
       if (this.st[i] === S_PARK || this.terr[i] === T_TREE) src[i] = B.GREEN;
     }
     let cur = src;
@@ -832,9 +854,11 @@ class Sim {
   monthlyBudget() {
     const n = this.w * this.h;
     let upkeep = 0;
+    const coalF = this.year >= BAL.ERA.COAL_TAX_YEAR ? BAL.ERA.COAL_UPKEEP_F : 1; // CO₂-Abgabe
     for (let i = 0; i < n; i++) {
       const s = this.st[i];
-      if (s !== S_NONE && DEFS[s] && this.isAnchor(i)) upkeep += DEFS[s].upkeep;
+      if (s !== S_NONE && DEFS[s] && this.isAnchor(i))
+        upkeep += DEFS[s].upkeep * (s === S_COAL ? coalF : 1);
     }
     const income = Math.round((this.pop * BAL.MONEY.TAX_POP + this.jobs * BAL.MONEY.TAX_JOBS) * this.taxRate / BAL.DEMAND.TAX_NEUTRAL);
     const casinoIncome = (this.casinos || 0) * DEFS[S_CASINO].income;
@@ -854,6 +878,19 @@ class Sim {
         this.events.push({ type: 'milestone', key, params: { pop: lim, bonus } });
       }
     });
+    // Epochen-Ereignisse (je einmal, beim Erreichen des Jahres)
+    const eras = [
+      [BAL.ERA.SOLAR_YEAR, 'era94', 'ev.era94'],
+      [BAL.ERA.COAL_TAX_YEAR, 'era98', 'ev.era98'],
+      [BAL.ERA.ECAR_YEAR, 'era00', 'ev.era00'],
+      [BAL.ERA.SOLAR_UP_YEAR, 'era02', 'ev.era02'],
+    ];
+    for (const [yr, flag, key] of eras) {
+      if (this.year >= yr && !this.milestones[flag]) {
+        this.milestones[flag] = true;
+        this.events.push({ type: 'milestone', key });
+      }
+    }
     const D = BAL.DISASTER;
     if (this.disasters && this.pop > D.MIN_POP) {
       if (this.rand() < D.FIRE_P) this.igniteRandom();
@@ -916,6 +953,7 @@ class Sim {
       brownout: !!this.brownout, powerNeed: this.powerNeed, powerSupply: this.powerSupply,
       money: this.money, debt: this.debt, taxRate: this.taxRate,
       day: this.day, month: this.month, year: this.year, startYear: this.startYear,
+      cityName: this.cityName, cheated: this.cheated,
       disasters: this.disasters, sandbox: this.sandbox,
       milestones: this.milestones, lastBudget: this.lastBudget,
       actors: this.actors, history: this.history, advCd: this.advCd,
@@ -946,6 +984,8 @@ class Sim {
     s.debt = d.debt || 0;
     s.day = d.day; s.month = d.month; s.year = d.year;
     s.startYear = d.startYear || 1990;
+    s.cityName = d.cityName || 'Retropolis';
+    s.cheated = !!d.cheated;
     s.disasters = d.disasters !== false;
     s.sandbox = !!d.sandbox;
     s.milestones = d.milestones || {};
@@ -983,6 +1023,6 @@ if (typeof module !== 'undefined' && module.exports) {
     T_GRASS, T_WATER, T_SAND, T_TREE,
     S_NONE, S_ROAD, S_WIRE, S_RZONE, S_CZONE, S_IZONE, S_PARK, S_POLICE,
     S_FIREDEP, S_SCHOOL, S_HOSPITAL, S_WIND, S_COAL, S_STADIUM, S_RUBBLE,
-    S_RAIL, S_WTOWER, S_PUMP, S_TOWNHALL, S_MONUMENT, S_CASINO,
+    S_RAIL, S_WTOWER, S_PUMP, S_TOWNHALL, S_MONUMENT, S_CASINO, S_SOLAR,
   };
 }

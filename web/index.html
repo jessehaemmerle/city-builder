@@ -53,6 +53,8 @@
   </select>
 
   <div class="group">
+    <button class="btn" id="btnBbs" title="RETRO-NET BBS">📟</button>
+    <button class="btn" id="btnCamera">📸</button>
     <button class="btn" id="btnStats">📈</button>
     <button class="btn" id="btnSfx">🔊</button>
     <button class="btn" id="btnMusic">🎵</button>
@@ -152,6 +154,9 @@
 <div id="newGamePanel" class="panel dialog hidden">
   <h2 data-i18n="ui.newGame"></h2>
   <div id="scenarioList"></div>
+  <div class="row">
+    <label><span data-i18n="ui.cityName"></span>: <input type="text" id="cityNameInput" maxlength="18" value="Retropolis"></label>
+  </div>
   <div class="row" id="mapOpts">
     <label><span data-i18n="ui.size"></span>:
       <select id="sizeSel" class="btn">
@@ -181,6 +186,24 @@
     <button class="btn" id="btnImport" data-i18n="ui.import"></button>
   </div>
   <div class="row right"><button class="btn" id="btnSlotsClose" data-i18n="ui.close"></button></div>
+</div>
+
+<!-- Postkarte -->
+<div id="postcardPanel" class="panel dialog hidden">
+  <h2 data-i18n="ui.postcard"></h2>
+  <img id="postcardImg" alt="Postkarte">
+  <div class="row right">
+    <button class="btn" id="btnPcSave" data-i18n="ui.pcSave"></button>
+    <button class="btn" id="btnPcClose" data-i18n="ui.close"></button>
+  </div>
+</div>
+
+<!-- RETRO-NET BBS -->
+<div id="bbsPanel" class="hidden">
+  <div id="bbsScreen">
+    <div id="bbsHeader"></div>
+    <div id="bbsBody"></div>
+  </div>
 </div>
 
 <!-- CRT-Effekt -->

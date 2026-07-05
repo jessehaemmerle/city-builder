@@ -72,6 +72,19 @@ const Sound = (() => {
     milestone: () => {
       [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => beep(f, 0.16, 'square', 0.10), i * 110));
     },
+    // 90er-Modem: Wählton, DTMF, Carrier-Kreischen, Connect
+    modem: () => {
+      if (!ensure()) return;
+      beep(350, 0.35, 'sine', 0.06);
+      beep(440, 0.35, 'sine', 0.06);
+      [697, 770, 852, 941, 1209].forEach((f, i) => {
+        setTimeout(() => { beep(f, 0.09, 'sine', 0.08); beep(1336, 0.09, 'sine', 0.08); }, 400 + i * 120);
+      });
+      setTimeout(() => { beep(2100, 0.5, 'square', 0.04); beep(1300, 0.5, 'sawtooth', 0.03, 600); }, 1100);
+      setTimeout(() => noise(0.55, 0.06), 1250);
+      setTimeout(() => { beep(1650, 0.18, 'square', 0.06); beep(980, 0.22, 'square', 0.05); }, 1850);
+    },
+    shutter: () => { beep(1800, 0.03, 'square', 0.10); noise(0.08, 0.10); },
   };
 
   // ---------- Musik: 2 Songs × Tag/Nacht ----------

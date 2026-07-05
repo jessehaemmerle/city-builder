@@ -165,6 +165,77 @@ function check(name, cond) {
   }
   await page.selectOption('#overlaySel', '');
 
+  // --- Bürger: Info-Klick auf ein bewohntes Haus ---
+  const citizen = await page.evaluate(() => {
+    const s = window.RETRO.sim;
+    for (let i = 0; i < s.w * s.h; i++)
+      if (s.st[i] === 3 && s.lvl[i] > 0) return window.RETRO.citizenOf(i);
+    return null;
+  });
+  check('Bürger:in pro Haus generiert (' + (citizen && citizen.name) + ')', !!(citizen && citizen.name));
+  const citStable = await page.evaluate(() => {
+    const s = window.RETRO.sim;
+    for (let i = 0; i < s.w * s.h; i++)
+      if (s.st[i] === 3 && s.lvl[i] > 0)
+        return window.RETRO.citizenOf(i).name === window.RETRO.citizenOf(i).name;
+    return false;
+  });
+  check('Bürgername deterministisch', citStable);
+
+  // --- Cheat-Code: "geld" (pausiert, damit die Kasse stillsteht) ---
+  await page.click('#spd0');
+  await page.waitForTimeout(200);
+  const moneyBefore = await page.evaluate(() => window.RETRO.sim.money);
+  await page.keyboard.type('geld');
+  await page.waitForTimeout(300);
+  const afterCheat = await page.evaluate(() => ({ m: window.RETRO.sim.money, c: window.RETRO.sim.cheated }));
+  check('Cheat „geld“ wirkt (+5000, markiert)', afterCheat.m === moneyBefore + 5000 && afterCheat.c === true);
+  await page.click('#spd3');
+
+  // --- Solar: 1990 gesperrt ---
+  const solarLocked = await page.evaluate(() =>
+    document.getElementById('tool_solar').classList.contains('locked'));
+  check('Solar 1990 gesperrt (Era-Lock)', solarLocked);
+
+  // --- Stadt-Link: Roundtrip ---
+  const shareOk = await page.evaluate(() => {
+    const link = window.RETRO.shareLink();
+    const loaded = window.RETRO.tryImportCode(link);
+    return loaded.pop === window.RETRO.sim.pop && link.includes('#city=');
+  });
+  check('Stadt-Link Roundtrip (Serialisieren → Link → Laden)', shareOk);
+
+  // --- BBS-Terminal ---
+  await page.click('#btnBbs');
+  await page.waitForTimeout(400);
+  check('BBS-Terminal offen', await page.isVisible('#bbsPanel'));
+  await page.locator('.bbsItem').first().click(); // [1] Veröffentlichen
+  await page.waitForTimeout(300);
+  const linkLen = await page.evaluate(() => {
+    const ta = document.querySelector('#bbsBody textarea');
+    return ta ? ta.value.length : 0;
+  });
+  check('BBS erzeugt Stadt-Link (' + (linkLen / 1024).toFixed(1) + ' KB)', linkLen > 500);
+  await page.screenshot({ path: require('path').join(__dirname, '..', 'docs', 'screenshot-bbs.png') });
+  // Zurück → Zeitung
+  await page.locator('.bbsItem', { hasText: '←' }).click();
+  await page.waitForTimeout(200);
+  await page.locator('.bbsItem').nth(3).click(); // [4] Zeitung
+  await page.waitForTimeout(200);
+  const newsOpen = await page.evaluate(() => document.getElementById('bbsBody').innerText.length > 10);
+  check('Zeitung im BBS lesbar', newsOpen);
+  await page.locator('.bbsItem', { hasText: '←' }).click();
+  await page.locator('.bbsItem', { hasText: /AUFLEGEN|HANG UP/ }).click();
+  await page.waitForTimeout(200);
+
+  // --- Postkarte ---
+  await page.click('#btnCamera');
+  await page.waitForTimeout(600);
+  check('Postkarten-Dialog offen', await page.isVisible('#postcardPanel'));
+  const pcSrc = await page.evaluate(() => document.getElementById('postcardImg').src.length);
+  check('Postkarte gerendert (' + Math.round(pcSrc / 1024) + ' KB PNG)', pcSrc > 10000);
+  await page.click('#btnPcClose');
+
   // Speichern/Laden über Slots
   await page.click('#btnSave');
   await page.waitForTimeout(200);

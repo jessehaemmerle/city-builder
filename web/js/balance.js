@@ -83,6 +83,19 @@
       FIRE_COV_SAFE: 40, FIRE_COV_STOP: 55, FIRE_COV_FAST: 30,
     },
 
+    // Epochen: die Zeit verändert das Spiel (Start 1990)
+    ERA: {
+      SOLAR_YEAR: 1994,       // Solaranlage wird verfügbar
+      SOLAR_POWER: 45,
+      SOLAR_UP_YEAR: 2002,    // bessere Module
+      SOLAR_POWER2: 65,
+      COAL_TAX_YEAR: 1998,    // CO₂-Abgabe: Kohle-Unterhalt steigt
+      COAL_UPKEEP_F: 1.5,
+      ECAR_YEAR: 2000,        // E-Autos: Straßenverschmutzung sinkt jährlich
+      ECAR_POLL_DECAY: 0.06,
+      ECAR_POLL_MIN: 0.35,
+    },
+
     // [Einwohner, Bonus, Ereignis-Key]
     MILESTONES: [
       [100, 1000, 'ev.ms0'],

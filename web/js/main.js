@@ -76,6 +76,7 @@
     { id: 'iz',       key: '7', mode: 'rect', s: S_IZONE },
     { id: 'wind',     key: '8', mode: 'single', s: S_WIND },
     { id: 'coal',     key: '9', mode: 'single', s: S_COAL },
+    { id: 'solar',    mode: 'single', s: S_SOLAR },
     { id: 'wtower',   mode: 'single', s: S_WTOWER },
     { id: 'pump',     mode: 'single', s: S_PUMP },
     { id: 'park',     key: '0', mode: 'single', s: S_PARK },
@@ -101,6 +102,7 @@
       case 'iz': return Sprites.store.zoneI;
       case 'wind': return Sprites.get('wind', frame || 0);
       case 'coal': return Sprites.store.coal;
+      case 'solar': return Sprites.store.solar;
       case 'wtower': return Sprites.store.wtower;
       case 'pump': return Sprites.store.pump;
       case 'park': return Sprites.store.park;
@@ -175,6 +177,7 @@
     $('btnRepay').textContent = t('ui.repay');
     $('btnTcOk').textContent = t('ui.build');
     $('btnTcCancel').textContent = t('ui.abort');
+    $('btnCamera').title = t('ui.camera');
     $('langSel').value = I18N.lang;
     buildToolbar();
     if (running) selectTool(tool);
@@ -204,6 +207,11 @@
     const tl = toolById[id];
     if (tl.s && DEFS[tl.s].minPop && sim && sim.pop < DEFS[tl.s].minPop) {
       toast(t('ui.locked', { name: t(DEFS[tl.s].name), n: DEFS[tl.s].minPop }), 'bad');
+      Sound.sfx.error();
+      return;
+    }
+    if (tl.s && DEFS[tl.s].minYear && sim && sim.year < DEFS[tl.s].minYear) {
+      toast('🔒 ' + t('err.minYear', { y: DEFS[tl.s].minYear }), 'bad');
       Sound.sfx.error();
       return;
     }
@@ -250,6 +258,127 @@
     $('advisorBox').classList.add('hidden');
     if (advisorQueue.length) nextAdvisor();
   });
+
+  // ============================================================
+  // BÜRGER: ein benannter Beispiel-Haushalt pro bewohntem Haus,
+  // deterministisch aus Seed + Kachel erzeugt (nichts gespeichert).
+  // ============================================================
+  const FIRST = ['Herta', 'Klaus', 'Sabine', 'Jürgen', 'Petra', 'Detlef', 'Anke', 'Bernd',
+    'Uschi', 'Holger', 'Silke', 'Ralf', 'Gabi', 'Torsten', 'Heike', 'Uwe',
+    'Manu', 'Sven', 'Birgit', 'Olaf', 'Tanja', 'Frank', 'Steffi', 'Dirk'];
+  const LAST = ['Kowalski', 'Meier', 'Schulze', 'Brandt', 'Neumann', 'Krüger', 'Vogel', 'Böhm',
+    'Sauer', 'Pfeiffer', 'Lorenz', 'Haas', 'Winkler', 'Sommer', 'Krause', 'Busch',
+    'Otto', 'Ludwig', 'Simon', 'Albrecht'];
+
+  function rng32(seed) {
+    let a = seed >>> 0;
+    return () => {
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      let v = Math.imul(a ^ a >>> 15, 1 | a);
+      v = v + Math.imul(v ^ v >>> 7, 61 | v) ^ v;
+      return ((v ^ v >>> 14) >>> 0) / 4294967296;
+    };
+  }
+
+  function citizenOf(i) {
+    if (!sim || sim.st[i] !== S_RZONE || sim.lvl[i] === 0) return null;
+    const r = rng32(sim.seed ^ Math.imul(i + 1, 2654435761));
+    const name = FIRST[(r() * FIRST.length) | 0] + ' ' + LAST[(r() * LAST.length) | 0];
+    const age = Math.min(99, 18 + ((r() * 50) | 0) + Math.max(0, sim.year - sim.startYear));
+    let jobKey = 'cit.job.none', workXY = null;
+    const w = sim.workOf[i];
+    if (w >= 0) {
+      const wx = w % sim.w, wy = (w / sim.w) | 0;
+      for (const [nx, ny] of [[wx, wy - 1], [wx + 1, wy], [wx, wy + 1], [wx - 1, wy]]) {
+        if (!sim.inMap(nx, ny)) continue;
+        const s2 = sim.st[sim.idx(nx, ny)];
+        if (s2 === S_CZONE && sim.lvl[sim.idx(nx, ny)] > 0) { jobKey = 'cit.job.shop'; workXY = [nx, ny]; break; }
+        if (s2 === S_IZONE && sim.lvl[sim.idx(nx, ny)] > 0) { jobKey = 'cit.job.factory'; workXY = [nx, ny]; break; }
+      }
+    }
+    let mood = 'cit.mood.happy';
+    if (!sim.powered[i]) mood = 'cit.mood.power';
+    else if (sim.lvl[i] >= 2 && sim.covWater[i] < 20) mood = 'cit.mood.water';
+    else if (sim.poll[i] > 30) mood = 'cit.mood.poll';
+    else if (sim.jamNear[i] > 70) mood = 'cit.mood.jam';
+    else if (sim.covPark[i] < 10) mood = 'cit.mood.park';
+    return { name, age, jobKey, workXY, mood, commute: sim.commuteDist[i] };
+  }
+
+  function randomCitizen() {
+    if (!sim) return null;
+    const homes = [];
+    for (let i = 0; i < sim.w * sim.h; i++)
+      if (sim.st[i] === S_RZONE && sim.lvl[i] > 0) homes.push(i);
+    if (!homes.length) return null;
+    const i = homes[(Math.random() * homes.length) | 0];
+    return Object.assign({ home: i }, citizenOf(i));
+  }
+
+  // ---------- Zeitung: Retropolis Kurier ----------
+  const newsFeed = [];
+  function pushNews(txt) {
+    newsFeed.unshift({ d: sim ? sim.dateStr() : '', txt });
+    if (newsFeed.length > 16) newsFeed.pop();
+  }
+  function monthlyNews() {
+    if (!sim || Math.random() < 0.45) return;
+    const c = randomCitizen();
+    if (!c) return;
+    if (sim.brownout) pushNews(t('news.power', { cit: c.name }));
+    else if (c.commute > 18) pushNews(t('news.jam', { cit: c.name, n: c.commute }));
+    else if ((sim.avgPollR || 0) > 28) pushNews(t('news.poll', { cit: c.name }));
+    else if (sim.taxRate > 12) pushNews(t('news.tax', { cit: c.name }));
+    else if (sim.happiness > 60) pushNews(t('news.nice', { cit: c.name, name: sim.cityName }));
+  }
+  const NEWS_BY_EVENT = {
+    'ev.fire': 'news.fire', 'ev.tornado': 'news.tornado', 'ev.flood': 'news.flood',
+    'ev.ufo': 'news.ufo', 'ev.broke': 'news.broke',
+    'ev.era94': 'news.era', 'ev.era98': 'news.era', 'ev.era00': 'news.era', 'ev.era02': 'news.era',
+    'ev.scenWon': 'news.scen', 'ev.scenLost': 'news.scen',
+  };
+
+  // ---------- Stadt als Link teilen ----------
+  function b64urlEncode(str) {
+    return btoa(unescape(encodeURIComponent(str))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  function b64urlDecode(s) {
+    s = s.replace(/-/g, '+').replace(/_/g, '/');
+    while (s.length % 4) s += '=';
+    return decodeURIComponent(escape(atob(s)));
+  }
+  function shareLink() {
+    return location.origin + location.pathname + '#city=' + b64urlEncode(sim.serialize());
+  }
+  function tryImportCode(code) {
+    let s = String(code).trim();
+    const m = s.match(/#city=([A-Za-z0-9\-_]+)/);
+    if (m) s = m[1]; else s = s.replace(/^city=/, '');
+    return Sim.load(b64urlDecode(s)); // wirft bei ungültigem Code
+  }
+
+  // ---------- Cheat-Codes (90er!) ----------
+  const cheatBuf = [];
+  let discoUntil = 0;
+  const CHEATS = [
+    { seq: ['arrowup', 'arrowup', 'arrowdown', 'arrowdown', 'arrowleft', 'arrowright', 'arrowleft', 'arrowright', 'b', 'a'],
+      fn: () => { sim.money += 10000; sim.cheated = true; cheatToast(t('cheat.money', { n: 10000 })); Sound.sfx.milestone(); } },
+    { seq: [...'geld'], fn: () => { sim.money += 5000; sim.cheated = true; cheatToast(t('cheat.money', { n: 5000 })); Sound.sfx.cash(); } },
+    { seq: [...'ufo'], fn: () => { sim.cheated = true; sim.spawnUfo(); drainEvents(); cheatToast(t('cheat.ufo')); } },
+    { seq: [...'sturm'], fn: () => { sim.cheated = true; sim.spawnTornado(); drainEvents(); cheatToast(t('cheat.storm')); } },
+    { seq: [...'disco'], fn: () => { discoUntil = performance.now() + 9000; cheatToast(t('cheat.disco')); Sound.sfx.milestone(); } },
+  ];
+  function cheatToast(what) { toast(t('cheat.on', { what }), 'milestone'); }
+  function checkCheats() {
+    for (const c of CHEATS) {
+      if (cheatBuf.length < c.seq.length) continue;
+      if (cheatBuf.slice(-c.seq.length).join(',') === c.seq.join(',')) {
+        cheatBuf.length = 0;
+        c.fn();
+        return;
+      }
+    }
+  }
 
   // ---------- Kamera ----------
   function screenToTile(px, py) {
@@ -445,7 +574,18 @@
     if (e.button !== 0 || !sim) return;
     const p = screenToTile(e.clientX, e.clientY);
     const tl = toolById[tool];
-    if (tl.mode === 'point') { selectTile(p.x, p.y); return; }
+    if (tl.mode === 'point') {
+      // Erst prüfen, ob ein Auto angeklickt wurde (wer fährt da?)
+      const car = carAt(e.clientX, e.clientY);
+      if (car) {
+        if (!car.cit) car.cit = randomCitizen();
+        if (car.cit) toast('🚗 ' + car.cit.name + ' — ' + t('cit.driving'));
+        Sound.sfx.click();
+        return;
+      }
+      selectTile(p.x, p.y);
+      return;
+    }
     drag = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
     if (tl.mode === 'paint' || tl.mode === 'single') {
       commitBuild();
@@ -547,7 +687,15 @@
 
   // ---------- Eingabe: Tastatur ----------
   window.addEventListener('keydown', (e) => {
+    const ae = document.activeElement;
+    if (ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return; // Tippen in Feldern
     if (!sim || !running) return;
+    // Cheat-Puffer
+    if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+      cheatBuf.push(e.key.toLowerCase());
+      if (cheatBuf.length > 12) cheatBuf.shift();
+      checkCheats();
+    }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); doUndo(); return; }
     if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) { e.preventDefault(); doRedo(); return; }
     if (e.key === ' ') {
@@ -591,6 +739,14 @@
         const val = s === S_RZONE ? BAL.R_POP[lv] + ' ' + t('ui.pop')
           : (s === S_CZONE ? BAL.C_JOBS : BAL.I_JOBS)[lv] + ' ' + t('ui.jobs');
         extra += '<div>' + val + '</div>';
+        // Beispiel-Bürger:in dieses Hauses
+        const cit = citizenOf(i);
+        if (cit) {
+          extra += '<div style="margin-top:4px">👤 <b>' + cit.name + '</b> · ' + t('cit.age', { n: cit.age }) + '</div>' +
+            '<div>' + t(cit.jobKey) +
+            (cit.commute >= 0 && cit.jobKey !== 'cit.job.none' ? ' · ' + t('cit.commute', { n: cit.commute }) : '') + '</div>' +
+            '<div style="color:#9aa3d6">„…' + t(cit.mood) + '“</div>';
+        }
       }
       if (s === S_ROAD) extra += '<div>' + t('ui.traffic') + ': ' + sim.traffic[i] + '%</div>';
     }
@@ -631,7 +787,7 @@
         if (!sim || !running) return;
         const prevMonth = sim.month;
         sim.tick();
-        if (sim.month !== prevMonth) autosave();
+        if (sim.month !== prevMonth) { autosave(); monthlyNews(); }
         drainEvents();
         if (selected) updateInfoPanel();
       }, iv);
@@ -647,6 +803,11 @@
       if (ev.type === 'milestone') Sound.sfx.milestone();
       else if (ev.type === 'bad' && (ev.key === 'ev.fire' || ev.key === 'ev.tornado' || ev.key === 'ev.flood')) Sound.sfx.fire();
       else if (ev.type === 'bad') Sound.sfx.error();
+      // Zeitung füttern
+      if (ev.key && ev.key.startsWith('ev.ms'))
+        pushNews(t('news.ms', { name: sim.cityName, pop: ev.params ? ev.params.pop : sim.pop }));
+      else if (NEWS_BY_EVENT[ev.key])
+        pushNews(t(NEWS_BY_EVENT[ev.key], { name: sim.cityName }));
     }
   }
 
@@ -675,6 +836,8 @@
       const def = DEFS[toolById[id].s];
       if (el) el.classList.toggle('locked', sim.pop < def.minPop);
     }
+    const sol = $('tool_solar');
+    if (sol) sol.classList.toggle('locked', sim.year < DEFS[S_SOLAR].minYear);
   }
 
   // ---------- Fahrzeuge (visuell) ----------
@@ -717,10 +880,14 @@
       const target = Math.min(40, Math.round(roads.length / 5));
       if (cars.length < target && roads.length > 0) {
         const i = roads[(Math.random() * roads.length) | 0];
+        // E-Autos ab 2000, Anteil wächst jährlich
+        const E = BAL.ERA;
+        const eProb = sim.year >= E.ECAR_YEAR ? Math.min(0.8, 0.1 + (sim.year - E.ECAR_YEAR) * 0.08) : 0;
         cars.push({
           tx: i % sim.w, ty: (i / sim.w) | 0, fx: i % sim.w, fy: (i / sim.w) | 0,
           dir: (Math.random() * 4) | 0, prog: 1,
-          color: CAR_COLORS[(Math.random() * CAR_COLORS.length) | 0],
+          e: Math.random() < eProb,
+          color: Math.random() < eProb ? '#7ae0d0' : CAR_COLORS[(Math.random() * CAR_COLORS.length) | 0],
         });
       }
       let railCount = 0, railStart = -1;
@@ -753,6 +920,24 @@
     });
   }
 
+  // Bildschirmposition eines Autos (für Klick-Treffertest)
+  function carScreenPos(v) {
+    const z = cam.zoom, ts = TILE * z;
+    const ox = -Math.round(cam.x * z), oy = -Math.round(cam.y * z);
+    const wx = (v.fx + (v.tx - v.fx) * v.prog) * ts, wy = (v.fy + (v.ty - v.fy) * v.prog) * ts;
+    const side = (v.dir === 0 ? 3 : v.dir === 2 ? -3 : 0) * z;
+    const sideY = (v.dir === 1 ? 3 : v.dir === 3 ? -3 : 0) * z;
+    return [ox + wx + ts / 2 + side, oy + wy + ts / 2 + sideY];
+  }
+  function carAt(px, py) {
+    const r = Math.max(10, 5 * cam.zoom);
+    for (const v of cars) {
+      const [cx, cy] = carScreenPos(v);
+      if (Math.hypot(px - cx, py - cy) <= r) return v;
+    }
+    return null;
+  }
+
   function drawVehicles(ox, oy, ts, z, isNight) {
     for (const v of cars) {
       const wx = (v.fx + (v.tx - v.fx) * v.prog) * ts, wy = (v.fy + (v.ty - v.fy) * v.prog) * ts;
@@ -770,6 +955,10 @@
         ctx.fillStyle = '#fff8c0';
         const hd = DIRS[v.dir];
         ctx.fillRect(cx + hd[0] * 3 * z - z / 2, cy + hd[1] * 3 * z - z / 2, z, z);
+      }
+      if (v.e) { // E-Auto: grünes Lämpchen
+        ctx.fillStyle = '#4dff88';
+        ctx.fillRect(cx - z / 2, cy - z / 2, z, z);
       }
     }
     for (const v of trains) {
@@ -911,7 +1100,7 @@
             [S_PARK]: 'park', [S_POLICE]: 'police', [S_FIREDEP]: 'firedep',
             [S_SCHOOL]: 'school', [S_HOSPITAL]: 'hospital',
             [S_WTOWER]: 'wtower', [S_PUMP]: 'pump', [S_TOWNHALL]: 'townhall',
-            [S_MONUMENT]: 'monument', [S_CASINO]: 'casino',
+            [S_MONUMENT]: 'monument', [S_CASINO]: 'casino', [S_SOLAR]: 'solar',
           };
           if (map[s]) g.drawImage(S(map[s]), lx, ly);
         }
@@ -1144,6 +1333,11 @@
       ctx.fillStyle = 'rgba(10,12,50,' + ((1 - nAlpha) * 0.2) + ')';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
+    // 🕺 DISCO-Cheat
+    if (performance.now() < discoUntil) {
+      ctx.fillStyle = 'hsla(' + ((now / 4) % 360) + ',95%,60%,0.16)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
 
     // Ambient-Sound: Wasseranteil im Bild + Verkehr
     if ((now | 0) % 1000 < 20) {
@@ -1247,6 +1441,7 @@
     } else {
       el.textContent = sim.sandbox ? t('ui.scenSandbox') : t('ui.scenFree');
     }
+    if (sim.cheated) el.textContent += ' · ' + t('cheat.shame');
   }
 
   // ---------- Speichern / Slots ----------
@@ -1256,11 +1451,12 @@
     try {
       localStorage.setItem(slotKey(currentSlot), sim.serialize());
       localStorage.setItem(slotKey(currentSlot) + '.meta', JSON.stringify({
-        pop: sim.pop, date: sim.dateStr(), size: sim.w,
+        pop: sim.pop, date: sim.dateStr(), size: sim.w, name: sim.cityName,
         scen: sim.scenario ? t('scen.' + sim.scenario.id) : (sim.sandbox ? t('scen.sandbox') : t('scen.free')),
         ts: Date.now(),
       }));
       localStorage.setItem(LAST_SLOT_KEY, String(currentSlot));
+      updateRecords();
     } catch (e) { /* voll/blockiert */ }
   }
   function slotMeta(n) {
@@ -1305,7 +1501,7 @@
       const row = document.createElement('div');
       row.className = 'slotRow' + (m ? '' : ' empty');
       const info = m
-        ? '<b>Slot ' + (n + 1) + '</b> — ' + m.scen + '<br>👤 ' + m.pop + ' · ' + m.date + ' · ' + m.size + '×' + m.size
+        ? '<b>Slot ' + (n + 1) + '</b> — ' + (m.name ? m.name + ' · ' : '') + m.scen + '<br>👤 ' + m.pop + ' · ' + m.date + ' · ' + m.size + '×' + m.size
         : '<b>Slot ' + (n + 1) + '</b> — ' + t('ui.slotEmpty');
       row.innerHTML = '<div class="slotInfo">' + info + '</div>';
       const btns = document.createElement('div');
@@ -1548,6 +1744,7 @@
     const seed = sc.fixedSeed || parseInt($('seedInput').value, 10) || ((Math.random() * 1e9) | 0);
     const size = sc.fixedSize || parseInt($('sizeSel').value, 10) || 64;
     const fresh = buildScenario(sc, size, seed);
+    fresh.cityName = ($('cityNameInput').value.trim() || 'Retropolis').slice(0, 18);
     currentSlot = pickFreeSlot();
     $('newGamePanel').classList.add('hidden');
     startGame(fresh, false);
@@ -1595,6 +1792,186 @@
     }
     return s;
   }
+
+  // ============================================================
+  // RETRO-NET BBS: Stadt teilen, einwählen, Rekorde, Zeitung
+  // ============================================================
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  }
+  function loadRecords() {
+    try { return JSON.parse(localStorage.getItem('retropolis.records') || '[]'); } catch (e) { return []; }
+  }
+  function updateRecords() {
+    if (!sim || sim.sandbox) return;
+    try {
+      const recs = loadRecords();
+      const k = recs.findIndex(r => r.slot === currentSlot);
+      const entry = { slot: currentSlot, name: sim.cityName, pop: sim.pop, year: sim.year, cheated: sim.cheated, ts: Date.now() };
+      if (k >= 0) {
+        if (sim.pop > recs[k].pop) recs[k] = entry;
+        else { recs[k].name = sim.cityName; recs[k].cheated = recs[k].cheated || sim.cheated; }
+      } else recs.push(entry);
+      recs.sort((a, b) => b.pop - a.pop);
+      localStorage.setItem('retropolis.records', JSON.stringify(recs.slice(0, 8)));
+    } catch (e) {}
+  }
+
+  function openBbs() {
+    if (!sim) return;
+    Sound.unlock();
+    Sound.sfx.modem();
+    $('bbsPanel').classList.remove('hidden');
+    bbsRender('menu');
+  }
+  function closeBbs() { $('bbsPanel').classList.add('hidden'); }
+
+  function bbsRender(view) {
+    $('bbsHeader').textContent =
+      t('bbs.header', { name: (sim ? sim.cityName : '—').toUpperCase() }) + '\n' + t('bbs.connecting');
+    const b = $('bbsBody');
+    b.innerHTML = '';
+    const item = (txt, fn) => {
+      const d = document.createElement('div');
+      d.className = 'bbsItem';
+      d.textContent = txt;
+      d.addEventListener('click', () => { Sound.sfx.click(); fn(); });
+      b.appendChild(d);
+    };
+    const line = (txt) => { const d = document.createElement('div'); d.textContent = txt; b.appendChild(d); };
+    if (view === 'menu') {
+      item(t('bbs.m1'), () => bbsRender('pub'));
+      item(t('bbs.m2'), () => bbsRender('dial'));
+      item(t('bbs.m3'), () => bbsRender('rec'));
+      item(t('bbs.m4'), () => bbsRender('news'));
+      item(t('bbs.m5'), closeBbs);
+    } else if (view === 'pub') {
+      const link = shareLink();
+      line(t('bbs.pubInfo', { kb: (link.length / 1024).toFixed(1) }));
+      const ta = document.createElement('textarea');
+      ta.value = link; ta.readOnly = true;
+      b.appendChild(ta);
+      const copy = document.createElement('button');
+      copy.className = 'btn';
+      copy.textContent = t('bbs.copyLink');
+      copy.addEventListener('click', () => {
+        ta.select();
+        try { navigator.clipboard.writeText(link); } catch (e) { document.execCommand('copy'); }
+        copy.textContent = t('bbs.copied');
+        Sound.sfx.cash();
+      });
+      b.appendChild(copy);
+      item(t('bbs.back'), () => bbsRender('menu'));
+    } else if (view === 'dial') {
+      line(t('bbs.dialInfo'));
+      const ta = document.createElement('textarea');
+      b.appendChild(ta);
+      const go = document.createElement('button');
+      go.className = 'btn';
+      go.textContent = t('bbs.dialGo');
+      go.addEventListener('click', () => {
+        try {
+          const loaded = tryImportCode(ta.value);
+          line(t('bbs.dialOk', { name: loaded.cityName, pop: loaded.pop }));
+          Sound.sfx.milestone();
+          currentSlot = pickFreeSlot();
+          setTimeout(() => { closeBbs(); startGame(loaded, true); }, 900);
+        } catch (err) {
+          line(t('bbs.dialErr'));
+          Sound.sfx.error();
+        }
+      });
+      b.appendChild(go);
+      item(t('bbs.back'), () => bbsRender('menu'));
+    } else if (view === 'rec') {
+      line('== ' + t('bbs.recHead') + ' ==');
+      const recs = loadRecords();
+      if (!recs.length) line(t('bbs.recEmpty'));
+      recs.forEach((r, k) => line((k + 1) + '. ' + r.name + ' — ' + r.pop + ' · ' + r.year + (r.cheated ? ' 😈' : '')));
+      item(t('bbs.back'), () => bbsRender('menu'));
+    } else if (view === 'news') {
+      line(t('news.title') + ' — ' + (sim ? sim.dateStr() : ''));
+      if (!newsFeed.length) {
+        const d = document.createElement('div');
+        d.className = 'newsItem';
+        d.textContent = t('news.empty');
+        b.appendChild(d);
+      }
+      newsFeed.forEach(n => {
+        const d = document.createElement('div');
+        d.className = 'newsItem';
+        d.innerHTML = '<small>' + escapeHtml(n.d) + '</small><br>' + escapeHtml(n.txt);
+        b.appendChild(d);
+      });
+      item(t('bbs.back'), () => bbsRender('menu'));
+    }
+  }
+  $('btnBbs').addEventListener('click', openBbs);
+
+  // ---------- Foto-Modus: Postkarte ----------
+  function renderPostcard() {
+    const W = sim.w, H = sim.h;
+    // Ganze Stadt bei Tag ablichten
+    const photo = document.createElement('canvas');
+    photo.width = W * TILE; photo.height = H * TILE;
+    const px = photo.getContext('2d');
+    px.imageSmoothingEnabled = false;
+    const waterSpr = Sprites.get('water', 0, false);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++)
+      if (sim.terr[sim.idx(x, y)] === T_WATER) px.drawImage(waterSpr, x * TILE, y * TILE);
+    for (let cy = 0; cy < chunksY; cy++) for (let cx = 0; cx < chunksX; cx++) {
+      bakeChunk(cx, cy, false);
+      px.drawImage(chunks[cy][cx].cv, cx * CHUNK * TILE, cy * CHUNK * TILE);
+      chunks[cy][cx].dirty = true; // Anzeige backt danach wieder aktuell
+    }
+    // Postkarte 640x480
+    const pc = document.createElement('canvas');
+    pc.width = 640; pc.height = 480;
+    const g = pc.getContext('2d');
+    g.imageSmoothingEnabled = false;
+    g.fillStyle = '#efe6d0'; g.fillRect(0, 0, 640, 480);
+    g.strokeStyle = '#b8a888'; g.lineWidth = 2; g.strokeRect(5, 5, 630, 470);
+    const fw = 600, fh = 356;
+    const sc = Math.min(fw / photo.width, fh / photo.height);
+    const dw = photo.width * sc, dh = photo.height * sc;
+    g.fillStyle = '#10101c'; g.fillRect(20, 20, fw, fh);
+    g.drawImage(photo, 20 + (fw - dw) / 2, 20 + (fh - dh) / 2, dw, dh);
+    g.strokeStyle = '#1a1a29'; g.strokeRect(20, 20, fw, fh);
+    // Briefmarke mit Häuschen
+    g.fillStyle = '#fff'; g.fillRect(556, 30, 56, 68);
+    g.strokeStyle = '#c9484f'; g.strokeRect(559, 33, 50, 62);
+    g.drawImage(Sprites.store.r[1], 564, 40, 40, 40);
+    g.fillStyle = '#1a1a29'; g.font = 'bold 10px monospace';
+    g.fillText(String(sim.year), 572, 92);
+    // Poststempel
+    g.strokeStyle = 'rgba(40,40,60,0.6)';
+    g.beginPath(); g.arc(520, 62, 26, 0, 7); g.stroke();
+    g.font = 'bold 8px monospace'; g.fillStyle = 'rgba(40,40,60,0.75)';
+    g.fillText(sim.dateStr(), 486, 64);
+    // Grußtext
+    g.font = 'bold 26px monospace'; g.fillStyle = '#8d3742';
+    g.fillText(t('pc.greet', { name: sim.cityName }), 24, 414);
+    g.font = 'bold 14px monospace'; g.fillStyle = '#3a4258';
+    g.fillText(t('pc.stats', { pop: sim.pop, date: sim.dateStr() }), 24, 438);
+    g.font = '10px monospace'; g.fillStyle = '#8a8072';
+    g.fillText('RETROPOLIS · 16-BIT CITY BUILDER', 24, 460);
+    return pc;
+  }
+
+  $('btnCamera').addEventListener('click', () => {
+    if (!sim || !running) return;
+    Sound.sfx.shutter();
+    $('postcardImg').src = renderPostcard().toDataURL('image/png');
+    $('postcardPanel').classList.remove('hidden');
+  });
+  $('btnPcSave').addEventListener('click', () => {
+    const a = document.createElement('a');
+    a.href = $('postcardImg').src;
+    a.download = 'postkarte-' + (sim ? sim.cityName.replace(/\W+/g, '_') : 'stadt') + '.png';
+    a.click();
+    Sound.sfx.cash();
+  });
+  $('btnPcClose').addEventListener('click', () => $('postcardPanel').classList.add('hidden'));
 
   // ---------- Titelbildschirm ----------
   function showTitle() {
@@ -1658,6 +2035,21 @@
     resize();
     showTitle();
     updateUndoButtons();
+    // Geteilte Stadt aus dem Link laden (#city=…)
+    if (location.hash.startsWith('#city=')) {
+      try {
+        const loaded = tryImportCode(location.hash);
+        history.replaceState(null, '', location.pathname + location.search);
+        if (confirm(t('share.confirm', { name: loaded.cityName, pop: loaded.pop, date: loaded.dateStr() }))) {
+          currentSlot = pickFreeSlot();
+          startGame(loaded, true);
+          toast(t('share.loaded', { name: loaded.cityName }), 'milestone');
+        }
+      } catch (e) {
+        console.error('Stadt-Link defekt:', e);
+        toast(t('share.invalid'), 'bad');
+      }
+    }
     requestAnimationFrame(render);
   }
 
@@ -1665,6 +2057,8 @@
   window.RETRO = {
     get sim() { return sim; },
     loadSlot, startGame, buildScenario, SCENARIOS,
+    shareLink, tryImportCode, citizenOf, renderPostcard,
+    get newsFeed() { return newsFeed; },
   };
 
   boot();

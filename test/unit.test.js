@@ -6,7 +6,7 @@
 'use strict';
 const M = require('./load-sim.js');
 const { Sim, rleEncode, rleDecode } = M;
-const { S_ROAD, S_WIRE, S_RZONE, S_CZONE, S_IZONE, S_COAL, S_WIND, S_WTOWER, S_PUMP, S_NONE, T_WATER } = M;
+const { S_ROAD, S_WIRE, S_RZONE, S_CZONE, S_IZONE, S_COAL, S_WIND, S_WTOWER, S_PUMP, S_SOLAR, S_NONE, T_WATER } = M;
 
 let pass = 0, fail = 0;
 function check(name, cond) {
@@ -171,6 +171,54 @@ section('Bau-Regeln');
   // Fehler sind i18n-Keys
   const err = s.canPlace(S_WIND, waterSpot % 64, (waterSpot / 64) | 0);
   check('Fehlermeldungen sind i18n-Keys', err.reason === 'err.water');
+}
+
+section('Epochen (Solar, CO₂-Abgabe, E-Autos)');
+{
+  const s = new Sim(64, 64, 777);
+  s.money = 100000;
+  const c = 32;
+  for (let x = c - 4; x <= c + 4; x++) { s.terr[s.idx(x, c)] = 0; }
+  // Solar 1990: noch nicht erfunden
+  const early = s.canPlace(S_SOLAR, c, c);
+  check('Solar 1990 abgelehnt (err.minYear)', !early.ok && early.reason === 'err.minYear');
+  s.year = 1995;
+  const later = s.canPlace(S_SOLAR, c, c);
+  check('Solar 1995 erlaubt', later.ok === true);
+  s.place(S_SOLAR, c, c);
+  s.computePower();
+  check('Solar speist ' + BAL.ERA.SOLAR_POWER + ' ein', s.powerSupply === BAL.ERA.SOLAR_POWER);
+  s.year = 2003;
+  s.computePower();
+  check('Solar-Upgrade 2002: ' + BAL.ERA.SOLAR_POWER2, s.powerSupply === BAL.ERA.SOLAR_POWER2);
+  // CO₂-Abgabe auf Kohle
+  const s2 = new Sim(64, 64, 777);
+  s2.money = 100000;
+  for (let y = 30; y <= 33; y++) for (let x = 30; x <= 33; x++) s2.terr[s2.idx(x, y)] = 0;
+  s2.place(S_COAL, 30, 30);
+  s2.computeStats();
+  s2.monthlyBudget();
+  const upkeep1990 = s2.lastBudget.upkeep;
+  s2.year = 1999;
+  s2.monthlyBudget();
+  const upkeep1999 = s2.lastBudget.upkeep;
+  check('CO₂-Abgabe erhöht Kohle-Unterhalt (' + upkeep1990 + ' → ' + upkeep1999 + ')',
+    upkeep1999 > upkeep1990);
+  // Era-Event beim Jahreswechsel
+  const s3 = new Sim(48, 48, 1);
+  s3.year = 1994;
+  s3.monthlyBudget();
+  check('Era-Event 1994 gefeuert', s3.events.some(e => e.key === 'ev.era94'));
+}
+
+section('Stadtname & Cheat-Flag im Spielstand');
+{
+  const s = new Sim(48, 48, 5);
+  s.cityName = 'Teststadt';
+  s.cheated = true;
+  const s2 = Sim.load(s.serialize());
+  check('cityName überlebt Save/Load', s2.cityName === 'Teststadt');
+  check('cheated-Flag überlebt Save/Load', s2.cheated === true);
 }
 
 console.log('\n' + (fail === 0 ? '🎉' : '💥') + ' Unit-Tests: ' + pass + ' bestanden, ' + fail + ' fehlgeschlagen');
