@@ -1,0 +1,7 @@
+services:
+  retropolis:
+    build: .
+    container_name: retropolis
+    ports:
+      - "8080:80"
+    restart: unless-stopped

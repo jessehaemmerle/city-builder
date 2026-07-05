@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>RETROPOLIS — 16-Bit City Builder</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%231a1a29'/><rect x='2' y='6' width='4' height='8' fill='%234f8fdc'/><rect x='7' y='3' width='4' height='11' fill='%23c9484f'/><rect x='12' y='8' width='3' height='6' fill='%23f0d95c'/></svg>">
+</head>
+<body>
+
+<canvas id="game"></canvas>
+
+<!-- Obere Statusleiste -->
+<div id="topbar" class="panel">
+  <div class="stat" id="uiMoney" title="Stadtkasse">€ 0</div>
+  <div class="stat" id="uiPop" title="Einwohner">👤 0</div>
+  <div class="stat" id="uiJobs" title="Arbeitsplätze">🛠 0</div>
+  <div class="stat" id="uiHappy" title="Zufriedenheit">🙂 50%</div>
+  <div class="stat" id="uiPower" title="Strom: Bedarf / Erzeugung">⚡ 0/0</div>
+  <div class="stat" id="uiDate">1. Jan 1990</div>
+
+  <div id="rci" title="Nachfrage: Wohnen / Gewerbe / Industrie">
+    <div class="rciCol"><div class="rciBarWrap"><div class="rciBar r" id="rciR"></div></div><span>W</span></div>
+    <div class="rciCol"><div class="rciBarWrap"><div class="rciBar c" id="rciC"></div></div><span>G</span></div>
+    <div class="rciCol"><div class="rciBarWrap"><div class="rciBar i" id="rciI"></div></div><span>I</span></div>
+  </div>
+
+  <div class="group">
+    <button class="btn spd" id="spd0" title="Pause (Leertaste)">⏸</button>
+    <button class="btn spd active" id="spd1" title="Normal">▶</button>
+    <button class="btn spd" id="spd2" title="Schnell">▶▶</button>
+    <button class="btn spd" id="spd3" title="Turbo">▶▶▶</button>
+  </div>
+
+  <select id="overlaySel" class="btn" title="Daten-Ansicht (Overlay)">
+    <option value="">Ansicht: Normal</option>
+    <option value="power">⚡ Stromnetz</option>
+    <option value="poll">☁ Umwelt</option>
+    <option value="police">🚓 Polizei</option>
+    <option value="fire">🚒 Feuerwehr</option>
+    <option value="school">🎓 Bildung</option>
+    <option value="health">🏥 Gesundheit</option>
+    <option value="park">🌳 Freizeit</option>
+  </select>
+
+  <div class="group">
+    <button class="btn" id="btnSfx" title="Soundeffekte an/aus">🔊</button>
+    <button class="btn" id="btnMusic" title="Musik an/aus">🎵</button>
+    <button class="btn" id="btnBudget" title="Budget &amp; Optionen">📒</button>
+    <button class="btn" id="btnSave" title="Spiel speichern">💾</button>
+    <button class="btn" id="btnMenu" title="Hauptmenü">☰</button>
+  </div>
+</div>
+
+<!-- Werkzeugleiste (wird von JS befüllt) -->
+<div id="toolbar" class="panel"></div>
+
+<!-- Info-Panel (Abfrage-Werkzeug) -->
+<div id="infoPanel" class="panel hidden"></div>
+
+<!-- Budget & Optionen -->
+<div id="budgetPanel" class="panel dialog hidden">
+  <h2>📒 Budget &amp; Optionen</h2>
+  <div id="budgetRows"></div>
+  <label class="row">Steuersatz: <b id="taxVal">9%</b>
+    <input type="range" id="taxSlider" min="0" max="20" value="9">
+  </label>
+  <label class="row"><input type="checkbox" id="chkDisaster" checked> Katastrophen (Brände)</label>
+  <label class="row"><input type="checkbox" id="chkCrt" checked> CRT-Scanlines</label>
+  <div class="row right"><button class="btn" id="btnBudgetClose">Schließen</button></div>
+</div>
+
+<!-- Minimap -->
+<div id="minimapWrap" class="panel"><canvas id="minimap" width="128" height="128"></canvas></div>
+
+<!-- Meldungen -->
+<div id="toasts"></div>
+
+<!-- Titelbildschirm -->
+<div id="titleScreen">
+  <div id="titleBox">
+    <h1 id="logo">RETRO<span>POLIS</span></h1>
+    <p class="subtitle">— 16-BIT CITY BUILDER —</p>
+    <div id="titleButtons">
+      <button class="btn big hidden" id="btnContinue">▶ WEITERSPIELEN</button>
+      <button class="btn big" id="btnNew">★ NEUE STADT</button>
+    </div>
+    <p class="hint">
+      🖱 Linksklick/Ziehen: bauen &nbsp;·&nbsp; Rechtsklick/Ziehen: Karte bewegen &nbsp;·&nbsp; Mausrad: Zoom<br>
+      ⌨ 1–9: Werkzeuge &nbsp;·&nbsp; Leertaste: Pause &nbsp;·&nbsp; ESC: Auswahl-Werkzeug<br><br>
+      Verbinde Zonen mit <b>Straßen</b> und <b>Strom</b>, dann wächst deine Stadt!
+    </p>
+    <p class="credits">© 199X HAEMMERLE SOFT · PRESS START</p>
+  </div>
+</div>
+
+<!-- CRT-Effekt -->
+<div id="scanlines"></div>
+
+<script src="js/sprites.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/sim.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
