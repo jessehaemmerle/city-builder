@@ -1,0 +1,12 @@
+{
+  "name": "retropolis",
+  "version": "2.0.0",
+  "description": "16-Bit City Builder — Browser-Spiel im Docker-Container",
+  "private": true,
+  "scripts": {
+    "start": "npx http-server web -p 8080",
+    "test": "node test/unit.test.js && node test/soak.test.js",
+    "test:e2e": "node test/e2e.test.js",
+    "benchmark": "node test/benchmark.js"
+  }
+}

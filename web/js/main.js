@@ -1,7 +1,9 @@
 /* ============================================================
- * RETROPOLIS — Hauptspiel: Rendering, Eingabe, UI, Spielschleife
- * Autos & Züge, Tag/Nacht, Undo/Redo, Berater, Statistik,
- * Szenarien, Save-Slots, Import/Export, Kartenvorschau.
+ * RETROPOLIS — Hauptspiel v3
+ * Chunk-Renderer (nur Geändertes wird neu gebacken),
+ * i18n (DE/EN), Wachstums-Diagnose, Overlay-Muster (A11y),
+ * Touch-Bestätigung, Autos & Züge, Tag/Nacht, Undo/Redo,
+ * Berater, Statistik, Szenarien, Save-Slots, Import/Export.
  * ============================================================ */
 'use strict';
 
@@ -10,6 +12,7 @@
   const SLOT_KEYS = ['retropolis.slot1', 'retropolis.slot2', 'retropolis.slot3'];
   const LEGACY_KEY = 'retropolis.save';
   const LAST_SLOT_KEY = 'retropolis.lastSlot';
+  const t = (k, p) => I18N.t(k, p);
 
   // ---------- Zustand ----------
   let sim = null;
@@ -28,6 +31,8 @@
   let currentSlot = 0;
   let nightEnabled = true;
   let lastFrame = 0;
+  let touchConfirmMode = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+  let pendingTap = null;
 
   // Undo/Redo
   const undoStack = [], redoStack = [];
@@ -38,16 +43,9 @@
   let trains = [];
   let lastCarSpawn = 0;
 
-  // Berater-Warteschlange
+  // Berater
   const advisorQueue = [];
   let advisorTimer = null;
-  const ADVISORS = {
-    finance: 'Kämmerer Konrad',
-    power: 'Ing. Elke Watt',
-    env: 'Dr. Flora Grün',
-    fire: 'Brandmeister Falk',
-    water: 'Wassermeisterin Wilma',
-  };
 
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
@@ -58,62 +56,43 @@
 
   // ---------- Szenarien ----------
   const SCENARIOS = [
-    {
-      id: 'free', name: 'Freies Spiel',
-      desc: 'Klassischer Modus: 25.000 € Startkapital, baue in deinem Tempo.',
-    },
-    {
-      id: 'sandbox', name: 'Sandbox',
-      desc: 'Unbegrenztes Geld, Katastrophen aus — einfach drauflos bauen.',
-    },
-    {
-      id: 'sprint', name: 'Szenario: Wachstums-Sprint',
-      desc: 'Ziel: 1.000 Einwohner in 5 Jahren. Leere Karte, normale Kasse.',
-      goal: { minPop: 1000, years: 5 },
-    },
-    {
-      id: 'green', name: 'Szenario: Grüne Metropole',
-      desc: 'Ziel: 2.000 Einwohner und Zufriedenheit ≥ 55% in 10 Jahren — Kohlekraft ist verboten!',
-      goal: { minPop: 2000, minHappy: 55, years: 10, noCoal: true },
-    },
-    {
-      id: 'broke', name: 'Szenario: Die Pleite-Stadt',
-      desc: 'Übernimm eine verschuldete Stadt (20.000 € Schulden, hohe Steuern). Ziel: 1.500 Einwohner und Zufriedenheit ≥ 50% in 8 Jahren.',
-      goal: { minPop: 1500, minHappy: 50, years: 8 },
-      fixedSeed: 777, fixedSize: 64,
-    },
+    { id: 'free' },
+    { id: 'sandbox' },
+    { id: 'sprint', goal: { minPop: 1000, years: 5 } },
+    { id: 'green', goal: { minPop: 2000, minHappy: 55, years: 10, noCoal: true } },
+    { id: 'broke', goal: { minPop: 1500, minHappy: 50, years: 8 }, fixedSeed: 777, fixedSize: 64 },
   ];
   let ngScenario = 'free';
 
   // ---------- Werkzeuge ----------
   const TOOLS = [
-    { id: 'point',    name: 'Info',      key: '1', mode: 'point' },
-    { id: 'dozer',    name: 'Abriss',    key: '2', mode: 'paint', cost: 1 },
-    { id: 'road',     name: 'Straße',    key: '3', mode: 'line', s: S_ROAD },
-    { id: 'rail',     name: 'Schiene',   mode: 'line', s: S_RAIL },
-    { id: 'wire',     name: 'Leitung',   key: '4', mode: 'line', s: S_WIRE },
-    { id: 'rz',       name: 'Wohnen',    key: '5', mode: 'rect', s: S_RZONE },
-    { id: 'cz',       name: 'Gewerbe',   key: '6', mode: 'rect', s: S_CZONE },
-    { id: 'iz',       name: 'Industrie', key: '7', mode: 'rect', s: S_IZONE },
-    { id: 'wind',     name: 'Windrad',   key: '8', mode: 'single', s: S_WIND },
-    { id: 'coal',     name: 'Kohle-KW',  key: '9', mode: 'single', s: S_COAL },
-    { id: 'wtower',   name: 'W-Turm',    mode: 'single', s: S_WTOWER },
-    { id: 'pump',     name: 'Pumpwerk',  mode: 'single', s: S_PUMP },
-    { id: 'park',     name: 'Park',      key: '0', mode: 'single', s: S_PARK },
-    { id: 'police',   name: 'Polizei',   mode: 'single', s: S_POLICE },
-    { id: 'firedep',  name: 'Feuerwehr', mode: 'single', s: S_FIREDEP },
-    { id: 'school',   name: 'Schule',    mode: 'single', s: S_SCHOOL },
-    { id: 'hospital', name: 'Klinik',    mode: 'single', s: S_HOSPITAL },
-    { id: 'stadium',  name: 'Stadion',   mode: 'single', s: S_STADIUM },
-    { id: 'townhall', name: 'Rathaus',   mode: 'single', s: S_TOWNHALL },
-    { id: 'monument', name: 'Denkmal',   mode: 'single', s: S_MONUMENT },
-    { id: 'casino',   name: 'Casino',    mode: 'single', s: S_CASINO },
+    { id: 'point',    key: '1', mode: 'point' },
+    { id: 'dozer',    key: '2', mode: 'paint', cost: 1 },
+    { id: 'road',     key: '3', mode: 'line', s: S_ROAD },
+    { id: 'rail',     mode: 'line', s: S_RAIL },
+    { id: 'wire',     key: '4', mode: 'line', s: S_WIRE },
+    { id: 'rz',       key: '5', mode: 'rect', s: S_RZONE },
+    { id: 'cz',       key: '6', mode: 'rect', s: S_CZONE },
+    { id: 'iz',       key: '7', mode: 'rect', s: S_IZONE },
+    { id: 'wind',     key: '8', mode: 'single', s: S_WIND },
+    { id: 'coal',     key: '9', mode: 'single', s: S_COAL },
+    { id: 'wtower',   mode: 'single', s: S_WTOWER },
+    { id: 'pump',     mode: 'single', s: S_PUMP },
+    { id: 'park',     key: '0', mode: 'single', s: S_PARK },
+    { id: 'police',   mode: 'single', s: S_POLICE },
+    { id: 'firedep',  mode: 'single', s: S_FIREDEP },
+    { id: 'school',   mode: 'single', s: S_SCHOOL },
+    { id: 'hospital', mode: 'single', s: S_HOSPITAL },
+    { id: 'stadium',  mode: 'single', s: S_STADIUM },
+    { id: 'townhall', mode: 'single', s: S_TOWNHALL },
+    { id: 'monument', mode: 'single', s: S_MONUMENT },
+    { id: 'casino',   mode: 'single', s: S_CASINO },
   ];
   const toolById = {};
-  TOOLS.forEach(t => toolById[t.id] = t);
+  TOOLS.forEach(tl => toolById[tl.id] = tl);
 
-  function toolSprite(t, frame) {
-    switch (t.id) {
+  function toolSprite(tl, frame) {
+    switch (tl.id) {
       case 'road': return Sprites.get('road', 10);
       case 'rail': return Sprites.get('rail', 10);
       case 'wire': return Sprites.get('wire', 10);
@@ -137,7 +116,7 @@
     return null;
   }
 
-  let BOLT = null, DROP = null;
+  let BOLT = null, DROP = null, HATCH = null;
   function makeIcons() {
     BOLT = Sprites.art([
       '..Kyy.',
@@ -154,57 +133,82 @@
       'bbbbb',
       '.bbb.',
     ]);
+    // Schraffur-Muster für „Problem“-Overlays (Farbenblind-tauglich)
+    HATCH = document.createElement('canvas');
+    HATCH.width = 8; HATCH.height = 8;
+    const hx = HATCH.getContext('2d');
+    hx.strokeStyle = 'rgba(0,0,0,0.8)';
+    hx.lineWidth = 1.4;
+    hx.beginPath();
+    hx.moveTo(-2, 6); hx.lineTo(6, -2);
+    hx.moveTo(2, 10); hx.lineTo(10, 2);
+    hx.stroke();
   }
 
-  function iconFor(t) {
+  function iconFor(tl) {
     const c = document.createElement('canvas');
     c.width = 16; c.height = 16;
     const x = c.getContext('2d');
     x.imageSmoothingEnabled = false;
-    if (t.id === 'point') {
+    if (tl.id === 'point') {
       x.fillStyle = '#f2f2ef';
       for (let j = 0; j < 9; j++) x.fillRect(3, 2 + j, Math.min(j + 1, 6), 1);
       x.fillRect(6, 10, 2, 3);
       x.fillStyle = '#1a1a29';
       x.fillRect(3, 1, 1, 10);
-    } else if (t.id === 'dozer') {
+    } else if (tl.id === 'dozer') {
       x.strokeStyle = '#ff6b6b'; x.lineWidth = 3;
       x.beginPath(); x.moveTo(3, 3); x.lineTo(13, 13); x.moveTo(13, 3); x.lineTo(3, 13); x.stroke();
     } else {
-      const s = toolSprite(t, 0);
+      const s = toolSprite(tl, 0);
       x.drawImage(s, 0, 0, s.width, s.height, 0, 0, 16, 16);
     }
     return c.toDataURL();
+  }
+
+  // ---------- i18n auf statisches DOM anwenden ----------
+  function applyI18n() {
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+      el.textContent = t(el.getAttribute('data-i18n'));
+    });
+    $('btnLoan').textContent = t('ui.loan');
+    $('btnRepay').textContent = t('ui.repay');
+    $('btnTcOk').textContent = t('ui.build');
+    $('btnTcCancel').textContent = t('ui.abort');
+    $('langSel').value = I18N.lang;
+    buildToolbar();
+    if (running) selectTool(tool);
   }
 
   // ---------- Toolbar ----------
   function buildToolbar() {
     const bar = $('toolbar');
     bar.innerHTML = '';
-    TOOLS.forEach(t => {
+    TOOLS.forEach(tl => {
       const d = document.createElement('div');
       d.className = 'tool';
-      d.id = 'tool_' + t.id;
-      const cost = t.s ? DEFS[t.s].cost : (t.cost || 0);
+      d.id = 'tool_' + tl.id;
+      const cost = tl.s ? DEFS[tl.s].cost : (tl.cost || 0);
       d.innerHTML =
-        (t.key ? '<span class="tKey">' + t.key + '</span>' : '') +
-        '<img src="' + iconFor(t) + '" alt="">' +
-        '<span class="tName">' + t.name + '</span>' +
+        (tl.key ? '<span class="tKey">' + tl.key + '</span>' : '') +
+        '<img src="' + iconFor(tl) + '" alt="">' +
+        '<span class="tName">' + t('t.' + tl.id) + '</span>' +
         '<span class="tCost">' + (cost ? cost + '€' : '&nbsp;') + '</span>';
-      d.title = t.s ? DEFS[t.s].name : (t.id === 'dozer' ? 'Abreißen / Bäume fällen' : 'Kachel-Info abfragen (ESC)');
-      d.addEventListener('click', () => { selectTool(t.id); Sound.sfx.click(); });
+      d.title = tl.s ? t(DEFS[tl.s].name) : (tl.id === 'dozer' ? t('t.dozerTip') : t('t.pointTip'));
+      d.addEventListener('click', () => { selectTool(tl.id); Sound.sfx.click(); });
       bar.appendChild(d);
     });
   }
 
   function selectTool(id) {
-    const t = toolById[id];
-    if (t.s && DEFS[t.s].minPop && sim && sim.pop < DEFS[t.s].minPop) {
-      toast('🔒 ' + DEFS[t.s].name + ' erst ab ' + DEFS[t.s].minPop + ' Einwohnern!', 'bad');
+    const tl = toolById[id];
+    if (tl.s && DEFS[tl.s].minPop && sim && sim.pop < DEFS[tl.s].minPop) {
+      toast(t('ui.locked', { name: t(DEFS[tl.s].name), n: DEFS[tl.s].minPop }), 'bad');
       Sound.sfx.error();
       return;
     }
     tool = id;
+    clearPendingTap();
     document.querySelectorAll('.tool').forEach(el => el.classList.remove('active'));
     const el = $('tool_' + id);
     if (el) el.classList.add('active');
@@ -222,21 +226,21 @@
   }
 
   // ---------- Berater ----------
-  function showAdvisor(key, msg) {
-    advisorQueue.push({ key, msg });
+  function showAdvisor(key) {
+    advisorQueue.push(key);
     if (!advisorTimer) nextAdvisor();
   }
   function nextAdvisor() {
     const box = $('advisorBox');
     if (advisorQueue.length === 0) { box.classList.add('hidden'); advisorTimer = null; return; }
-    const { key, msg } = advisorQueue.shift();
+    const key = advisorQueue.shift();
     const face = $('advisorFace');
     const fx = face.getContext('2d');
     fx.clearRect(0, 0, 16, 16);
     const spr = Sprites.store.advisors[key];
     if (spr) fx.drawImage(spr, 0, 0);
-    $('advisorName').textContent = ADVISORS[key] || 'Berater';
-    $('advisorText').textContent = msg;
+    $('advisorName').textContent = t('adv.' + key);
+    $('advisorText').textContent = t('advmsg.' + key);
     box.classList.remove('hidden');
     Sound.sfx.click();
     advisorTimer = setTimeout(nextAdvisor, 14000);
@@ -247,7 +251,7 @@
     if (advisorQueue.length) nextAdvisor();
   });
 
-  // ---------- Kamera / Koordinaten ----------
+  // ---------- Kamera ----------
   function screenToTile(px, py) {
     return {
       x: Math.floor((px / cam.zoom + cam.x) / TILE),
@@ -290,15 +294,16 @@
 
   function previewTiles() {
     if (!drag) {
+      if (pendingTap) return [[pendingTap.x, pendingTap.y]];
       if (hover.x < 0) return null;
-      const t = toolById[tool];
-      if (t.mode === 'single' || t.mode === 'line' || t.mode === 'rect' || t.mode === 'paint')
+      const tl = toolById[tool];
+      if (tl.mode === 'single' || tl.mode === 'line' || tl.mode === 'rect' || tl.mode === 'paint')
         return [[hover.x, hover.y]];
       return null;
     }
-    const t = toolById[tool];
-    if (t.mode === 'line') return linePath(drag.x0, drag.y0, drag.x1, drag.y1);
-    if (t.mode === 'rect') return rectTiles(drag.x0, drag.y0, drag.x1, drag.y1);
+    const tl = toolById[tool];
+    if (tl.mode === 'line') return linePath(drag.x0, drag.y0, drag.x1, drag.y1);
+    if (tl.mode === 'rect') return rectTiles(drag.x0, drag.y0, drag.x1, drag.y1);
     return [[drag.x1, drag.y1]];
   }
 
@@ -313,24 +318,23 @@
     for (const s of snaps) {
       sim.st[s.i] = s.st; sim.lvl[s.i] = s.lvl; sim.anchor[s.i] = s.anchor;
       sim.burn[s.i] = s.burn; sim.terr[s.i] = s.terr;
+      sim.markChanged(s.i);
     }
   }
   function recomputeAfterSnap() {
-    sim.dirtyPower = true; sim.dirtyCov = true;
-    sim.computePower(); sim.computeCoverage(); sim.computeRoadAccess(); sim.computeStats();
+    sim.dirtyPower = true; sim.dirtyCov = true; sim.dirtyCommute = true;
+    sim.computePower(); sim.computeCoverage(); sim.computeRoadAccess();
+    sim.computeCommute(); sim.computeStats();
   }
   function affectedIndices(tool_, x, y) {
-    // Footprint bzw. bei Abriss die ganze Gebäudegruppe
-    const t = toolById[tool_];
-    const idxs = [];
-    if (t.id === 'dozer') {
+    const tl = toolById[tool_];
+    if (tl.id === 'dozer') {
       const i = sim.idx(x, y);
-      if (sim.st[i] === S_NONE) { idxs.push(i); return idxs; }
-      const a = sim.anchor[i] >= 0 ? sim.anchor[i] : i;
-      for (let j = 0; j < sim.w * sim.h; j++) if (sim.anchor[j] === a || j === a) idxs.push(j);
-      return idxs;
+      if (sim.st[i] === S_NONE) return [i];
+      return sim.footprint(i);
     }
-    const size = (t.s && DEFS[t.s].size === 2) ? 2 : 1;
+    const size = (tl.s && DEFS[tl.s].size === 2) ? 2 : 1;
+    const idxs = [];
     for (let dy = 0; dy < size; dy++) for (let dx = 0; dx < size; dx++)
       if (sim.inMap(x + dx, y + dy)) idxs.push(sim.idx(x + dx, y + dy));
     return idxs;
@@ -350,7 +354,7 @@
     redoStack.push(a);
     updateUndoButtons();
     Sound.sfx.dozer();
-    toast('↶ Rückgängig (+' + a.money + ' €)');
+    toast(t('ui.undo', { v: a.money }));
   }
   function doRedo() {
     const a = redoStack.pop();
@@ -361,59 +365,73 @@
     undoStack.push(a);
     updateUndoButtons();
     Sound.sfx.place();
-    toast('↷ Wiederholt (−' + a.money + ' €)');
+    toast(t('ui.redo', { v: a.money }));
   }
   function updateUndoButtons() {
     $('btnUndo').style.opacity = undoStack.length ? 1 : 0.4;
     $('btnRedo').style.opacity = redoStack.length ? 1 : 0.4;
   }
 
-  function commitBuild() {
-    const t = toolById[tool];
-    const tiles = previewTiles() || [];
-    let built = 0, spent = 0, lastReason = '';
+  function commitBuild(tiles) {
+    const tl = toolById[tool];
+    tiles = tiles || previewTiles() || [];
+    let built = 0, spent = 0, lastReason = '', lastParams = null;
     const parts = [];
     for (const [x, y] of tiles) {
       if (!sim.inMap(x, y)) continue;
       const idxs = affectedIndices(tool, x, y);
       const before = snapTiles(idxs);
       let r;
-      if (t.id === 'dozer') r = sim.bulldoze(x, y);
-      else if (t.s) r = sim.place(t.s, x, y);
+      if (tl.id === 'dozer') r = sim.bulldoze(x, y);
+      else if (tl.s) r = sim.place(tl.s, x, y);
       else continue;
       if (r.ok) {
         built++; spent += r.cost;
         parts.push({ before, after: snapTiles(idxs) });
-      } else if (r.reason !== 'schon vorhanden') lastReason = r.reason;
+      } else if (r.reason !== 'err.exists') { lastReason = r.reason; lastParams = r.params; }
     }
     if (built > 0) {
       pushUndo({ parts, money: spent });
-      if (t.id === 'dozer') Sound.sfx.dozer();
-      else if (t.id === 'road' || t.id === 'rail') Sound.sfx.road();
-      else if (t.id === 'wire') Sound.sfx.wire();
-      else if (t.mode === 'rect') Sound.sfx.zone();
+      if (tl.id === 'dozer') Sound.sfx.dozer();
+      else if (tl.id === 'road' || tl.id === 'rail') Sound.sfx.road();
+      else if (tl.id === 'wire') Sound.sfx.wire();
+      else if (tl.mode === 'rect') Sound.sfx.zone();
       else Sound.sfx.place();
-      maybeTutorial(t);
+      maybeTutorial(tl);
     } else if (lastReason) {
-      toast('❌ ' + lastReason, 'bad');
+      toast('❌ ' + t(lastReason, lastParams), 'bad');
       Sound.sfx.error();
     }
   }
 
   const tutSeen = {};
-  function maybeTutorial(t) {
+  function maybeTutorial(tl) {
     if (!tutorialShown) return;
-    if ((t.id === 'wind' || t.id === 'coal') && !tutSeen.power) {
-      tutSeen.power = true;
-      toast('💡 Straßen leiten Strom — verbinde das Kraftwerk mit dem Netz!');
-    } else if (t.mode === 'rect' && !tutSeen.zone) {
-      tutSeen.zone = true;
-      toast('💡 Zonen brauchen Strom + Straße/Schiene im Umkreis von 3 Feldern.');
-    } else if ((t.id === 'wtower' || t.id === 'pump') && !tutSeen.water) {
-      tutSeen.water = true;
-      toast('💡 Mit Wasser wachsen Zonen über Stufe 2 hinaus!');
+    if ((tl.id === 'wind' || tl.id === 'coal') && !tutSeen.power) {
+      tutSeen.power = true; toast(t('ui.tipPower'));
+    } else if (tl.mode === 'rect' && !tutSeen.zone) {
+      tutSeen.zone = true; toast(t('ui.tipZoneReq'));
+    } else if ((tl.id === 'wtower' || tl.id === 'pump') && !tutSeen.water) {
+      tutSeen.water = true; toast(t('ui.tipWater2'));
     }
   }
+
+  // ---------- Touch-Bestätigung ----------
+  function clearPendingTap() {
+    pendingTap = null;
+    $('touchConfirm').classList.add('hidden');
+  }
+  function showTouchConfirm(px, py) {
+    const tc = $('touchConfirm');
+    tc.classList.remove('hidden');
+    tc.style.left = Math.min(window.innerWidth - 160, Math.max(8, px - 70)) + 'px';
+    tc.style.top = Math.min(window.innerHeight - 120, py + 24) + 'px';
+  }
+  $('btnTcOk').addEventListener('click', () => {
+    if (pendingTap) commitBuild([[pendingTap.x, pendingTap.y]]);
+    clearPendingTap();
+  });
+  $('btnTcCancel').addEventListener('click', clearPendingTap);
 
   // ---------- Eingabe: Maus ----------
   canvas.addEventListener('contextmenu', e => e.preventDefault());
@@ -426,12 +444,12 @@
     }
     if (e.button !== 0 || !sim) return;
     const p = screenToTile(e.clientX, e.clientY);
-    const t = toolById[tool];
-    if (t.mode === 'point') { selectTile(p.x, p.y); return; }
+    const tl = toolById[tool];
+    if (tl.mode === 'point') { selectTile(p.x, p.y); return; }
     drag = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
-    if (t.mode === 'paint' || t.mode === 'single') {
+    if (tl.mode === 'paint' || tl.mode === 'single') {
       commitBuild();
-      if (t.mode === 'single') drag = null;
+      if (tl.mode === 'single') drag = null;
     }
   });
 
@@ -446,10 +464,10 @@
     const p = screenToTile(e.clientX, e.clientY);
     hover = p;
     if (drag) {
-      const t = toolById[tool];
+      const tl = toolById[tool];
       if ((p.x !== drag.x1 || p.y !== drag.y1)) {
         drag.x1 = p.x; drag.y1 = p.y;
-        if (t.mode === 'paint') commitBuild();
+        if (tl.mode === 'paint') commitBuild();
       }
     }
   });
@@ -457,8 +475,8 @@
   window.addEventListener('mouseup', (e) => {
     if (e.button === 2 || e.button === 1) { panning = null; return; }
     if (e.button !== 0 || !drag || !sim) return;
-    const t = toolById[tool];
-    if (t.mode === 'line' || t.mode === 'rect') commitBuild();
+    const tl = toolById[tool];
+    if (tl.mode === 'line' || tl.mode === 'rect') commitBuild();
     drag = null;
   });
 
@@ -477,8 +495,8 @@
     Sound.unlock();
     e.preventDefault();
     if (e.touches.length === 1) {
-      const t = e.touches[0];
-      touch = { mode: 'tap', sx: t.clientX, sy: t.clientY, cx: cam.x, cy: cam.y };
+      const tp = e.touches[0];
+      touch = { mode: 'tap', sx: tp.clientX, sy: tp.clientY, cx: cam.x, cy: cam.y };
     } else if (e.touches.length === 2) {
       const [a, b] = e.touches;
       touch = {
@@ -493,11 +511,11 @@
     e.preventDefault();
     if (!touch) return;
     if (touch.mode !== 'pinch' && e.touches.length === 1) {
-      const t = e.touches[0];
-      if (Math.hypot(t.clientX - touch.sx, t.clientY - touch.sy) > 12) touch.mode = 'pan';
+      const tp = e.touches[0];
+      if (Math.hypot(tp.clientX - touch.sx, tp.clientY - touch.sy) > 12) touch.mode = 'pan';
       if (touch.mode === 'pan') {
-        cam.x = touch.cx - (t.clientX - touch.sx) / cam.zoom;
-        cam.y = touch.cy - (t.clientY - touch.sy) / cam.zoom;
+        cam.x = touch.cx - (tp.clientX - touch.sx) / cam.zoom;
+        cam.y = touch.cy - (tp.clientY - touch.sy) / cam.zoom;
         clampCam();
       }
     } else if (touch.mode === 'pinch' && e.touches.length === 2) {
@@ -512,13 +530,16 @@
     e.preventDefault();
     if (touch && touch.mode === 'tap' && sim) {
       const p = screenToTile(touch.sx, touch.sy);
-      const t = toolById[tool];
-      if (t.mode === 'point') selectTile(p.x, p.y);
-      else {
+      const tl = toolById[tool];
+      if (tl.mode === 'point') selectTile(p.x, p.y);
+      else if (touchConfirmMode) {
+        // Erst Vorschau zeigen, dann bestätigen (Anti-Vertipper)
+        pendingTap = { x: p.x, y: p.y };
         hover = p;
-        drag = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
-        commitBuild();
-        drag = null;
+        showTouchConfirm(touch.sx, touch.sy);
+      } else {
+        hover = p;
+        commitBuild([[p.x, p.y]]);
       }
     }
     touch = null;
@@ -542,11 +563,11 @@
     if (e.key === 'ArrowDown' || e.key === 's') { cam.y += pan; clampCam(); }
     if (e.key === 'ArrowLeft' || e.key === 'a') { cam.x -= pan; clampCam(); }
     if (e.key === 'ArrowRight' || e.key === 'd') { cam.x += pan; clampCam(); }
-    const t = TOOLS.find(t => t.key === e.key);
-    if (t) selectTool(t.id);
+    const tl = TOOLS.find(tl => tl.key === e.key);
+    if (tl) selectTool(tl.id);
   });
 
-  // ---------- Info-Panel ----------
+  // ---------- Info-Panel mit Wachstums-Diagnose ----------
   function selectTile(x, y) {
     if (!sim.inMap(x, y)) return;
     selected = { x, y };
@@ -559,37 +580,47 @@
     const { x, y } = selected;
     const i = sim.idx(x, y);
     const s = sim.st[i];
-    const tn = ['Wiese', 'Wasser', 'Strand', 'Wald'][sim.terr[i]];
-    let name = tn, extra = '';
+    let name = t('terr.' + sim.terr[i]), extra = '';
     if (s !== S_NONE) {
-      name = DEFS[s].name;
-      if ((s === S_ROAD || s === S_RAIL || s === S_WIRE) && sim.terr[i] === T_WATER) name += ' (Brücke)';
+      name = t(DEFS[s].name);
+      if ((s === S_ROAD || s === S_RAIL || s === S_WIRE) && sim.terr[i] === T_WATER)
+        name += ' (' + t('ui.bridge') + ')';
       if (s >= S_RZONE && s <= S_IZONE) {
         const lv = sim.lvl[i];
-        name += ' (Stufe ' + lv + '/4)';
-        const val = s === S_RZONE ? R_POP[lv] + ' Einwohner'
-          : s === S_CZONE ? C_JOBS[lv] + ' Jobs' : I_JOBS[lv] + ' Jobs';
+        name += ' (' + t('ui.level') + ' ' + lv + '/4)';
+        const val = s === S_RZONE ? BAL.R_POP[lv] + ' ' + t('ui.pop')
+          : (s === S_CZONE ? BAL.C_JOBS : BAL.I_JOBS)[lv] + ' ' + t('ui.jobs');
         extra += '<div>' + val + '</div>';
       }
-      if (s === S_ROAD) extra += '<div>Verkehr: ' + sim.traffic[i] + '%</div>';
+      if (s === S_ROAD) extra += '<div>' + t('ui.traffic') + ': ' + sim.traffic[i] + '%</div>';
     }
-    const isBuild = sim.isBld(s);
-    const chk = (b) => b ? '<span class="ok">✓</span>' : '<span class="no">✗</span>';
     let html = '<h3>' + name + '</h3>' +
-      '<div>Position: ' + x + ', ' + y + '</div>' + extra;
-    if (isBuild) {
-      html += '<div>Strom: ' + chk(sim.powered[i]) + ' &nbsp; Anbindung: ' + chk(sim.roadOk[i]) +
-        ' &nbsp; Wasser: ' + chk(sim.covWater[i] >= 20) + '</div>';
+      '<div>' + t('ui.pos') + ': ' + x + ', ' + y + '</div>' + extra;
+    if (sim.burn[i] > 0) html += '<div class="no">' + t('ui.burning') + '</div>';
+    if (sim.floodT[i] > 0) html += '<div class="no">' + t('ui.flooded') + '</div>';
+    // Wachstums-Diagnose für Zonen
+    const diag = sim.explainZone(i);
+    if (diag) {
+      html += '<h3 style="margin-top:6px">' + t('diag.title') + '</h3>';
+      for (const d of diag) {
+        const mark = d.ok ? '<span class="ok">✓</span>'
+          : d.soft ? '<span style="color:#9aa3d6">◌</span>' : '<span class="no">✗</span>';
+        html += '<div>' + mark + ' ' + t(d.k) + (d.val !== undefined ? ' <span style="color:#9aa3d6">' + d.val + '</span>' : '') + '</div>';
+      }
+    } else if (sim.isBld(s)) {
+      const chk = (b) => b ? '<span class="ok">✓</span>' : '<span class="no">✗</span>';
+      html += '<div>' + t('ui.powerLbl') + ': ' + chk(sim.powered[i]) +
+        ' &nbsp; ' + t('ui.roadLbl') + ': ' + chk(sim.roadOk[i]) +
+        ' &nbsp; ' + t('ui.waterLbl') + ': ' + chk(sim.covWater[i] >= 20) + '</div>';
     }
-    if (sim.burn[i] > 0) html += '<div class="no">🔥 BRENNT!</div>';
-    if (sim.floodT[i] > 0) html += '<div class="no">🌊 ÜBERFLUTET!</div>';
-    html += '<div>Landwert: ' + sim.landv[i] + '% &nbsp;·&nbsp; Umwelt: ' +
-      (sim.poll[i] < 15 ? '<span class="ok">sauber</span>' : sim.poll[i] < 45 ? '⚠ belastet' : '<span class="no">verschmutzt</span>') + '</div>';
+    html += '<div>' + t('ui.landv') + ': ' + sim.landv[i] + '% · ' +
+      (sim.poll[i] < 15 ? '<span class="ok">' + t('ui.env.clean') + '</span>'
+        : sim.poll[i] < 45 ? t('ui.env.mid') : '<span class="no">' + t('ui.env.bad') + '</span>') + '</div>';
     html += '<div style="font-size:11px;color:#9aa3d6">🚓 ' + sim.covPolice[i] + '% · 🚒 ' + sim.covFire[i] + '% · 🎓 ' + sim.covSchool[i] + '% · 🏥 ' + sim.covHealth[i] + '% · 🌳 ' + sim.covPark[i] + '% · 🚰 ' + sim.covWater[i] + '%</div>';
     $('infoPanel').innerHTML = html;
   }
 
-  // ---------- Geschwindigkeit / Spielschleife ----------
+  // ---------- Spielschleife ----------
   function setSpeed(s) {
     speed = s;
     [0, 1, 2, 3].forEach(k => $('spd' + k).classList.toggle('active', k === s));
@@ -610,10 +641,11 @@
   function drainEvents() {
     while (sim.events.length) {
       const ev = sim.events.shift();
-      if (ev.type === 'advisor') { showAdvisor(ev.adv, ev.msg); continue; }
-      toast(ev.msg, ev.type === 'milestone' ? 'milestone' : ev.type === 'bad' ? 'bad' : '');
+      if (ev.type === 'advisor') { showAdvisor(ev.adv); continue; }
+      const msg = t(ev.key, ev.params);
+      toast(msg, ev.type === 'milestone' ? 'milestone' : ev.type === 'bad' ? 'bad' : '');
       if (ev.type === 'milestone') Sound.sfx.milestone();
-      else if (ev.type === 'bad' && (ev.msg.includes('Feuer') || ev.msg.includes('Tornado') || ev.msg.includes('Hochwasser'))) Sound.sfx.fire();
+      else if (ev.type === 'bad' && (ev.key === 'ev.fire' || ev.key === 'ev.tornado' || ev.key === 'ev.flood')) Sound.sfx.fire();
       else if (ev.type === 'bad') Sound.sfx.error();
     }
   }
@@ -638,7 +670,6 @@
     $('rciR').style.height = Math.max(0, sim.demandR) * 100 + '%';
     $('rciC').style.height = Math.max(0, sim.demandC) * 100 + '%';
     $('rciI').style.height = Math.max(0, sim.demandI) * 100 + '%';
-    // Meilenstein-Sperren visualisieren
     for (const id of ['stadium', 'townhall', 'monument', 'casino']) {
       const el = $('tool_' + id);
       const def = DEFS[toolById[id].s];
@@ -648,14 +679,13 @@
 
   // ---------- Fahrzeuge (visuell) ----------
   const CAR_COLORS = ['#c9484f', '#4f8fdc', '#f0d95c', '#f2f2ef', '#7a5cb8', '#e08438'];
-  const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]]; // N E S W
+  const DIRS = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 
   function tileHas(x, y, s) {
     return sim.inMap(x, y) && sim.st[sim.idx(x, y)] === s;
   }
 
   function stepVehicle(v, kind) {
-    // nächstes verbundenes Feld wählen (nicht rückwärts, außer Sackgasse)
     const opts = [];
     for (let d = 0; d < 4; d++) {
       if (d === (v.dir + 2) % 4) continue;
@@ -678,7 +708,6 @@
   function updateVehicles(dt) {
     if (!sim || speed === 0) return;
     const spdF = [0, 1, 1.6, 2.4][speed];
-    // Autos nachspawnen
     const now = performance.now();
     if (now - lastCarSpawn > 600) {
       lastCarSpawn = now;
@@ -688,14 +717,12 @@
       const target = Math.min(40, Math.round(roads.length / 5));
       if (cars.length < target && roads.length > 0) {
         const i = roads[(Math.random() * roads.length) | 0];
-        const car = {
+        cars.push({
           tx: i % sim.w, ty: (i / sim.w) | 0, fx: i % sim.w, fy: (i / sim.w) | 0,
           dir: (Math.random() * 4) | 0, prog: 1,
           color: CAR_COLORS[(Math.random() * CAR_COLORS.length) | 0],
-        };
-        cars.push(car);
+        });
       }
-      // Zug nachspawnen
       let railCount = 0, railStart = -1;
       for (let i = 0; i < sim.w * sim.h; i++)
         if (sim.st[i] === S_RAIL) { railCount++; if (railStart < 0) railStart = i; }
@@ -708,7 +735,6 @@
         });
       }
     }
-    // Bewegung
     cars = cars.filter(v => {
       if (!tileHas(v.tx, v.ty, S_ROAD)) return false;
       v.prog += dt * 1.7 * spdF;
@@ -728,11 +754,9 @@
   }
 
   function drawVehicles(ox, oy, ts, z, isNight) {
-    // Autos
     for (const v of cars) {
       const wx = (v.fx + (v.tx - v.fx) * v.prog) * ts, wy = (v.fy + (v.ty - v.fy) * v.prog) * ts;
       const horiz = v.dir === 1 || v.dir === 3;
-      // Rechtsverkehr: seitlicher Versatz
       const side = (v.dir === 0 ? 3 : v.dir === 2 ? -3 : 0) * z;
       const sideY = (v.dir === 1 ? 3 : v.dir === 3 ? -3 : 0) * z;
       const cx = ox + wx + ts / 2 + side, cy = oy + wy + ts / 2 + sideY;
@@ -748,7 +772,6 @@
         ctx.fillRect(cx + hd[0] * 3 * z - z / 2, cy + hd[1] * 3 * z - z / 2, z, z);
       }
     }
-    // Züge
     for (const v of trains) {
       const pts = [[v.fx + (v.tx - v.fx) * v.prog, v.fy + (v.ty - v.fy) * v.prog], ...v.trail];
       pts.forEach(([px, py], k) => {
@@ -766,12 +789,136 @@
   // ---------- Tag/Nacht ----------
   function nightAlpha() {
     if (!nightEnabled || !sim) return 0;
-    const t = (Date.now() / 1000) % 180 / 180; // 3-Minuten-Zyklus
-    if (t < 0.55) return 0;
-    if (t < 0.65) return (t - 0.55) / 0.10;
-    if (t < 0.90) return 1;
-    if (t < 1.00) return 1 - (t - 0.90) / 0.10;
+    const tt = (Date.now() / 1000) % 180 / 180;
+    if (tt < 0.55) return 0;
+    if (tt < 0.65) return (tt - 0.55) / 0.10;
+    if (tt < 0.90) return 1;
+    if (tt < 1.00) return 1 - (tt - 0.90) / 0.10;
     return 0;
+  }
+
+  // ============================================================
+  // CHUNK-RENDERER
+  // Statisches (Terrain ohne Wasser, Gebäude, Straßen) wird in
+  // 16×16-Kachel-Chunks vorgebacken und nur bei Änderung neu
+  // gezeichnet. Live pro Frame: Wasser, Feuer, Flut, Windräder,
+  // Rauch, Symbole, Fahrzeuge, Akteure, Overlays, Vorschau.
+  // ============================================================
+  const CHUNK = 16;
+  let chunks = [];      // [cy][cx] = {cv, dirty, night}
+  let chunksX = 0, chunksY = 0;
+
+  function initChunks() {
+    chunksX = Math.ceil(sim.w / CHUNK);
+    chunksY = Math.ceil(sim.h / CHUNK);
+    chunks = [];
+    for (let cy = 0; cy < chunksY; cy++) {
+      chunks[cy] = [];
+      for (let cx = 0; cx < chunksX; cx++) {
+        const cv = document.createElement('canvas');
+        cv.width = CHUNK * TILE; cv.height = CHUNK * TILE;
+        chunks[cy][cx] = { cv, dirty: true, night: false };
+      }
+    }
+  }
+
+  function invalidateTile(i) {
+    const x = i % sim.w, y = (i / sim.w) | 0;
+    const cx = (x / CHUNK) | 0, cy = (y / CHUNK) | 0;
+    if (chunks[cy] && chunks[cy][cx]) chunks[cy][cx].dirty = true;
+  }
+
+  function drainChanged() {
+    if (sim.allChanged) {
+      for (const row of chunks) for (const c of row) c.dirty = true;
+      sim.allChanged = false;
+      sim.changed.length = 0;
+      return;
+    }
+    for (const i of sim.changed) invalidateTile(i);
+    sim.changed.length = 0;
+  }
+
+  function bakeChunk(cx, cy, isNight) {
+    const ch = chunks[cy][cx];
+    const g = ch.cv.getContext('2d');
+    g.imageSmoothingEnabled = false;
+    g.clearRect(0, 0, ch.cv.width, ch.cv.height);
+    const X0 = cx * CHUNK, Y0 = cy * CHUNK;
+    const X1 = Math.min(sim.w - 1, X0 + CHUNK - 1), Y1 = Math.min(sim.h - 1, Y0 + CHUNK - 1);
+    const S = (name, frame) => Sprites.get(name, frame || 0, isNight);
+    // Terrain (Wasser bleibt transparent — wird live animiert)
+    for (let y = Y0; y <= Y1; y++) for (let x = X0; x <= X1; x++) {
+      const i = sim.idx(x, y);
+      const lx = (x - X0) * TILE, ly = (y - Y0) * TILE;
+      const tr = sim.terr[i];
+      if (tr === T_WATER) continue;
+      if (tr === T_SAND) g.drawImage(S('sand', (x + y) % 2), lx, ly);
+      else g.drawImage(S('grass', (x * 7 + y * 13) % 4), lx, ly);
+      if (tr === T_TREE) g.drawImage(S('tree'), lx, ly);
+    }
+    // Strukturen (inkl. 1 Kachel Rand für 2x2-Überhänge)
+    for (let y = Math.max(0, Y0 - 1); y <= Y1; y++) {
+      for (let x = Math.max(0, X0 - 1); x <= X1; x++) {
+        const i = sim.idx(x, y);
+        const s = sim.st[i];
+        if (s === S_NONE || s === S_WIND) continue; // Windrad dreht sich → live
+        const lx = (x - X0) * TILE, ly = (y - Y0) * TILE;
+        const inChunk = x >= X0 && y >= Y0;
+        if (s === S_ROAD || s === S_RAIL) {
+          if (!inChunk) continue;
+          let m = 0;
+          if (y > 0 && sim.st[i - sim.w] === s) m |= 1;
+          if (x < sim.w - 1 && sim.st[i + 1] === s) m |= 2;
+          if (y < sim.h - 1 && sim.st[i + sim.w] === s) m |= 4;
+          if (x > 0 && sim.st[i - 1] === s) m |= 8;
+          const bridge = sim.terr[i] === T_WATER;
+          const name = bridge ? (s === S_ROAD ? 'bridgeRoad' : 'bridgeRail') : (s === S_ROAD ? 'road' : 'rail');
+          g.drawImage(S(name, m), lx, ly);
+        } else if (s === S_WIRE) {
+          if (!inChunk) continue;
+          const cond = (j) => { const q = sim.st[j]; return q === S_ROAD || q === S_RAIL || q === S_WIRE || sim.isBld(q); };
+          let m = 0;
+          if (y > 0 && cond(i - sim.w)) m |= 1;
+          if (x < sim.w - 1 && cond(i + 1)) m |= 2;
+          if (y < sim.h - 1 && cond(i + sim.w)) m |= 4;
+          if (x > 0 && cond(i - 1)) m |= 8;
+          g.drawImage(S('wire', m), lx, ly);
+        } else if (s === S_RUBBLE) {
+          if (!inChunk) continue;
+          g.drawImage(S('rubble'), lx, ly);
+        } else if (s === S_COAL || s === S_STADIUM) {
+          if (sim.anchor[i] === i) // Anker kann im Randbereich liegen → Überhang zeichnen
+            g.drawImage(S(s === S_COAL ? 'coal' : 'stadium'), lx, ly, TILE * 2, TILE * 2);
+        } else if (s >= S_RZONE && s <= S_IZONE) {
+          if (!inChunk) continue;
+          const lv = sim.lvl[i];
+          if (lv === 0) {
+            g.drawImage(s === S_RZONE ? S('zoneR') : s === S_CZONE ? S('zoneC') : S('zoneI'), lx, ly);
+          } else {
+            let spr;
+            if (lv === 4 && s === S_RZONE && sim.landv[i] > BAL.LANDV.LUX_MIN) spr = S('rLux');
+            else if (lv === 4 && s === S_CZONE && sim.landv[i] > BAL.LANDV.LUX_MIN) spr = S('cLux');
+            else {
+              const key = s === S_RZONE ? 'r' : s === S_CZONE ? 'c' : 'i';
+              spr = (isNight ? Sprites.night[key] : Sprites.store[key])[lv];
+            }
+            g.drawImage(spr, lx, ly);
+          }
+        } else {
+          if (!inChunk) continue;
+          const map = {
+            [S_PARK]: 'park', [S_POLICE]: 'police', [S_FIREDEP]: 'firedep',
+            [S_SCHOOL]: 'school', [S_HOSPITAL]: 'hospital',
+            [S_WTOWER]: 'wtower', [S_PUMP]: 'pump', [S_TOWNHALL]: 'townhall',
+            [S_MONUMENT]: 'monument', [S_CASINO]: 'casino',
+          };
+          if (map[s]) g.drawImage(S(map[s]), lx, ly);
+        }
+      }
+    }
+    ch.dirty = false;
+    ch.night = isNight;
   }
 
   // ---------- Rendering ----------
@@ -789,6 +936,7 @@
     lastFrame = now;
     if (!sim) return;
     updateVehicles(dt);
+    drainChanged();
 
     ctx.imageSmoothingEnabled = false;
     const z = cam.zoom, ts = TILE * z;
@@ -796,6 +944,7 @@
     const W = sim.w, H = sim.h;
     const nAlpha = nightAlpha();
     const isNight = nAlpha > 0.5;
+    Sound.setNight(isNight);
     ctx.fillStyle = isNight ? '#0a0a14' : '#10101c';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -810,117 +959,65 @@
     const smokeF = Math.floor(now / 350) % 2;
     const tornF = Math.floor(now / 120) % 2;
     const blink = Math.floor(now / 450) % 2 === 0;
-
     const S = (name, frame) => Sprites.get(name, frame || 0, isNight);
 
-    // --- Terrain ---
-    for (let y = y0; y <= y1; y++) {
-      for (let x = x0; x <= x1; x++) {
-        const i = sim.idx(x, y);
-        const sx = ox + x * ts, sy = oy + y * ts;
-        const t = sim.terr[i];
-        let spr;
-        if (t === T_WATER) spr = S('water', waterF);
-        else if (t === T_SAND) spr = S('sand', (x + y) % 2);
-        else spr = S('grass', (x * 7 + y * 13) % 4);
-        ctx.drawImage(spr, sx, sy, ts, ts);
-        if (t === T_TREE) ctx.drawImage(S('tree'), sx, sy, ts, ts);
+    // 1) Wasser live (liegt unter den Chunk-Brücken)
+    const waterSpr = S('water', waterF);
+    let waterTiles = 0;
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      const i = sim.idx(x, y);
+      if (sim.terr[i] === T_WATER) {
+        ctx.drawImage(waterSpr, ox + x * ts, oy + y * ts, ts, ts);
+        waterTiles++;
       }
     }
 
-    // --- Strukturen ---
+    // 2) Vorgebackene Chunks
+    const c0x = Math.max(0, (x0 / CHUNK) | 0), c1x = Math.min(chunksX - 1, (x1 / CHUNK) | 0);
+    const c0y = Math.max(0, (y0 / CHUNK) | 0), c1y = Math.min(chunksY - 1, (y1 / CHUNK) | 0);
+    for (let cy = c0y; cy <= c1y; cy++) {
+      for (let cx = c0x; cx <= c1x; cx++) {
+        const ch = chunks[cy][cx];
+        if (ch.dirty || ch.night !== isNight) bakeChunk(cx, cy, isNight);
+        ctx.drawImage(ch.cv, ox + cx * CHUNK * ts, oy + cy * CHUNK * ts, CHUNK * ts, CHUNK * ts);
+      }
+    }
+
+    // 3) Animiertes & Symbole live
     for (let y = y0; y <= y1; y++) {
       for (let x = x0; x <= x1; x++) {
         const i = sim.idx(x, y);
         const s = sim.st[i];
-        if (s === S_NONE) {
-          if (sim.floodT[i] > 0) { ctx.globalAlpha = 0.75; ctx.drawImage(S('water', waterF), ox + x * ts, oy + y * ts, ts, ts); ctx.globalAlpha = 1; }
-          continue;
-        }
         const sx = ox + x * ts, sy = oy + y * ts;
-        if (s === S_ROAD || s === S_RAIL) {
-          let m = 0;
-          if (y > 0 && sim.st[i - W] === s) m |= 1;
-          if (x < W - 1 && sim.st[i + 1] === s) m |= 2;
-          if (y < H - 1 && sim.st[i + W] === s) m |= 4;
-          if (x > 0 && sim.st[i - 1] === s) m |= 8;
-          const bridge = sim.terr[i] === T_WATER;
-          const name = bridge ? (s === S_ROAD ? 'bridgeRoad' : 'bridgeRail') : (s === S_ROAD ? 'road' : 'rail');
-          ctx.drawImage(S(name, m), sx, sy, ts, ts);
-        } else if (s === S_WIRE) {
-          const cond = (j) => { const q = sim.st[j]; return q === S_ROAD || q === S_RAIL || q === S_WIRE || sim.isBld(q); };
-          let m = 0;
-          if (y > 0 && cond(i - W)) m |= 1;
-          if (x < W - 1 && cond(i + 1)) m |= 2;
-          if (y < H - 1 && cond(i + W)) m |= 4;
-          if (x > 0 && cond(i - 1)) m |= 8;
-          ctx.drawImage(S('wire', m), sx, sy, ts, ts);
-        } else if (s === S_RUBBLE) {
-          ctx.drawImage(S('rubble'), sx, sy, ts, ts);
-        } else if (s === S_COAL || s === S_STADIUM) {
-          if (sim.anchor[i] === i) {
-            ctx.drawImage(S(s === S_COAL ? 'coal' : 'stadium'), sx, sy, ts * 2, ts * 2);
-            if (s === S_COAL) {
-              const sm = S('smoke', smokeF);
-              ctx.drawImage(sm, sx + 2 * z, sy - 4 * z + (smokeF ? -2 * z : 0), 8 * z, 8 * z);
-              ctx.drawImage(sm, sx + 12 * z, sy - 3 * z - (smokeF ? 2 * z : 0), 8 * z, 8 * z);
-            }
-          }
-        } else if (s === S_WIND) {
-          ctx.drawImage(S('wind', windF), sx, sy, ts, ts);
-        } else if (s >= S_RZONE && s <= S_IZONE) {
-          const lv = sim.lvl[i];
-          if (lv === 0) {
-            const zs = s === S_RZONE ? S('zoneR') : s === S_CZONE ? S('zoneC') : S('zoneI');
-            ctx.drawImage(zs, sx, sy, ts, ts);
-          } else {
-            // Luxus-Varianten bei hohem Landwert
-            let spr;
-            if (lv === 4 && s === S_RZONE && sim.landv[i] > 62) spr = S('rLux');
-            else if (lv === 4 && s === S_CZONE && sim.landv[i] > 62) spr = S('cLux');
-            else {
-              const key = s === S_RZONE ? 'r' : s === S_CZONE ? 'c' : 'i';
-              spr = (isNight ? Sprites.night[key] : Sprites.store[key])[lv];
-            }
-            ctx.drawImage(spr, sx, sy, ts, ts);
-            if (s === S_IZONE && lv >= 2) {
-              ctx.drawImage(S('smoke', smokeF), sx + 1 * z, sy - 3 * z, 6 * z, 6 * z);
-            }
-          }
-        } else {
-          const map = {
-            [S_PARK]: 'park', [S_POLICE]: 'police', [S_FIREDEP]: 'firedep',
-            [S_SCHOOL]: 'school', [S_HOSPITAL]: 'hospital',
-            [S_WTOWER]: 'wtower', [S_PUMP]: 'pump', [S_TOWNHALL]: 'townhall',
-            [S_MONUMENT]: 'monument', [S_CASINO]: 'casino',
-          };
-          if (map[s]) ctx.drawImage(S(map[s]), sx, sy, ts, ts);
+        if (s === S_WIND) ctx.drawImage(S('wind', windF), sx, sy, ts, ts);
+        else if (s === S_COAL && sim.anchor[i] === i) {
+          const sm = S('smoke', smokeF);
+          ctx.drawImage(sm, sx + 2 * z, sy - 4 * z + (smokeF ? -2 * z : 0), 8 * z, 8 * z);
+          ctx.drawImage(sm, sx + 12 * z, sy - 3 * z - (smokeF ? 2 * z : 0), 8 * z, 8 * z);
+        } else if (s === S_IZONE && sim.lvl[i] >= 2) {
+          ctx.drawImage(S('smoke', smokeF), sx + 1 * z, sy - 3 * z, 6 * z, 6 * z);
         }
-        // Kein Strom → blinkender Blitz
-        if (blink && !sim.powered[i] && sim.anchor[i] === i &&
-          ((s >= S_RZONE && s <= S_IZONE && sim.lvl[i] > 0) ||
-            (DEFS[s] && DEFS[s].drain))) {
+        if (blink && s !== S_NONE && !sim.powered[i] && sim.anchor[i] === i &&
+          ((s >= S_RZONE && s <= S_IZONE && sim.lvl[i] > 0) || (DEFS[s] && DEFS[s].drain))) {
           ctx.drawImage(BOLT, sx + ts - 7 * z, sy + z, 6 * z, 6 * z);
         }
-        // Kein Wasser (bremst ab Stufe 2) → blinkender Tropfen
         if (!blink && s >= S_RZONE && s <= S_IZONE && sim.lvl[i] >= 2 &&
           sim.covWater[i] < 20 && sim.powered[i]) {
           ctx.drawImage(DROP, sx + ts - 6 * z, sy + z, 5 * z, 5 * z);
         }
-        // Feuer / Flut
         if (sim.burn[i] > 0) ctx.drawImage(S('fire', fireF), sx, sy, ts, ts);
         if (sim.floodT[i] > 0) {
           ctx.globalAlpha = 0.75;
-          ctx.drawImage(S('water', waterF), sx, sy, ts, ts);
+          ctx.drawImage(waterSpr, sx, sy, ts, ts);
           ctx.globalAlpha = 1;
         }
       }
     }
 
-    // --- Fahrzeuge ---
+    // 4) Fahrzeuge
     drawVehicles(ox, oy, ts, z, isNight);
 
-    // --- Katastrophen-Akteure ---
+    // 5) Katastrophen-Akteure
     for (const a of sim.actors) {
       const ax = ox + a.x * ts, ay = oy + a.y * ts;
       if (a.type === 'tornado') {
@@ -941,24 +1038,31 @@
       }
     }
 
-    // --- Overlay ---
+    // 6) Overlay (Farbe + Muster für Problemzonen — Farbenblind-tauglich)
     if (overlay) {
       for (let y = y0; y <= y1; y++) {
         for (let x = x0; x <= x1; x++) {
           const i = sim.idx(x, y);
           const sx = ox + x * ts, sy = oy + y * ts;
-          let col = null;
+          let col = null, hatch = false;
           if (overlay === 'power') {
             const s = sim.st[i];
-            if (s === S_WIRE || s === S_ROAD || s === S_RAIL || sim.isBld(s))
-              col = sim.powered[i] ? 'rgba(60,255,120,0.40)' : 'rgba(255,60,60,0.50)';
+            if (s === S_WIRE || s === S_ROAD || s === S_RAIL || sim.isBld(s)) {
+              if (sim.powered[i]) col = 'rgba(60,255,120,0.40)';
+              else { col = 'rgba(255,60,60,0.50)'; hatch = true; }
+            }
           } else if (overlay === 'poll') {
             const p = sim.poll[i];
-            if (p > 4) col = 'rgba(255,' + (Math.max(0, 160 - p * 2.2) | 0) + ',40,' + Math.min(0.6, p / 130 + 0.12) + ')';
+            if (p > 4) {
+              col = 'rgba(255,' + (Math.max(0, 160 - p * 2.2) | 0) + ',40,' + Math.min(0.6, p / 130 + 0.12) + ')';
+              if (p > 60) hatch = true;
+            }
           } else if (overlay === 'traffic') {
             if (sim.st[i] === S_ROAD) {
-              const t = sim.traffic[i];
-              col = t < 35 ? 'rgba(80,230,110,0.5)' : t < 70 ? 'rgba(240,217,92,0.55)' : 'rgba(255,70,60,0.6)';
+              const tv = sim.traffic[i];
+              if (tv < 35) col = 'rgba(80,230,110,0.5)';
+              else if (tv < 70) col = 'rgba(240,217,92,0.55)';
+              else { col = 'rgba(255,70,60,0.6)'; hatch = true; }
             }
           } else if (overlay === 'landv') {
             const v = sim.landv[i];
@@ -972,14 +1076,18 @@
             const m = { police: sim.covPolice, fire: sim.covFire, school: sim.covSchool, health: sim.covHealth, park: sim.covPark }[overlay];
             if (m && m[i] > 0) col = 'rgba(60,180,255,' + (m[i] / 100 * 0.5) + ')';
           }
-          if (col) { ctx.fillStyle = col; ctx.fillRect(sx, sy, ts, ts); }
+          if (col) {
+            ctx.fillStyle = col;
+            ctx.fillRect(sx, sy, ts, ts);
+            if (hatch) ctx.drawImage(HATCH, sx, sy, ts, ts);
+          }
         }
       }
     }
 
-    // --- Bau-Vorschau ---
-    const t = toolById[tool];
-    if (t.mode !== 'point' && hover.x >= 0 && !panning) {
+    // 7) Bau-Vorschau
+    const tl = toolById[tool];
+    if (tl.mode !== 'point' && (hover.x >= 0 || pendingTap) && !panning) {
       const tiles = previewTiles();
       if (tiles) {
         let total = 0;
@@ -987,19 +1095,19 @@
           if (!sim.inMap(x, y)) continue;
           const sx = ox + x * ts, sy = oy + y * ts;
           let ok, cost = 0;
-          if (t.id === 'dozer') {
+          if (tl.id === 'dozer') {
             const i = sim.idx(x, y);
             ok = sim.st[i] !== S_NONE || sim.terr[i] === T_TREE;
             cost = 1;
           } else {
-            const r = sim.canPlace(t.s, x, y);
-            ok = r.ok; cost = r.ok ? r.cost : sim.costAt(t.s, x, y);
+            const r = sim.canPlace(tl.s, x, y);
+            ok = r.ok; cost = r.ok ? r.cost : sim.costAt(tl.s, x, y);
           }
           if (ok) total += cost;
-          const size = (t.s && DEFS[t.s].size === 2) ? 2 : 1;
-          if (ok && t.s && t.mode === 'single') {
+          const size = (tl.s && DEFS[tl.s].size === 2) ? 2 : 1;
+          if (ok && tl.s && tl.mode === 'single') {
             ctx.globalAlpha = 0.65;
-            ctx.drawImage(toolSprite(t, windF), sx, sy, ts * size, ts * size);
+            ctx.drawImage(toolSprite(tl, windF), sx, sy, ts * size, ts * size);
             ctx.globalAlpha = 1;
           }
           ctx.fillStyle = ok ? 'rgba(120,255,140,0.25)' : 'rgba(255,60,60,0.35)';
@@ -1021,20 +1129,26 @@
       }
     }
 
-    // --- Auswahl-Rahmen ---
+    // 8) Auswahl-Rahmen
     if (selected && tool === 'point') {
       ctx.strokeStyle = blink ? '#fff' : '#f0d95c';
       ctx.lineWidth = 2;
       ctx.strokeRect(ox + selected.x * ts + 1, oy + selected.y * ts + 1, ts - 2, ts - 2);
     }
 
-    // --- Nacht-Tönung (weicher Übergang) ---
+    // 9) Dämmerungs-Tönung
     if (nAlpha > 0 && !isNight) {
       ctx.fillStyle = 'rgba(10,12,50,' + (nAlpha * 0.45) + ')';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     } else if (isNight && nAlpha < 1) {
       ctx.fillStyle = 'rgba(10,12,50,' + ((1 - nAlpha) * 0.2) + ')';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // Ambient-Sound: Wasseranteil im Bild + Verkehr
+    if ((now | 0) % 1000 < 20) {
+      const visTiles = Math.max(1, (x1 - x0 + 1) * (y1 - y0 + 1));
+      Sound.ambient(waterTiles / visTiles, cars.length);
     }
 
     updateHUD();
@@ -1087,16 +1201,16 @@
     clampCam();
   });
 
-  // ---------- Statistik-Panel ----------
+  // ---------- Statistik ----------
   function drawStats() {
     const c = $('statsCanvas'), x = c.getContext('2d');
     x.fillStyle = '#14141f'; x.fillRect(0, 0, c.width, c.height);
     const hist = sim.history;
     const pad = 30, w = c.width - pad - 8, h = (c.height - 40) / 3;
     const series = [
-      { key: 'p', label: 'Einwohner', color: '#6fe06f' },
-      { key: 'm', label: 'Kasse €', color: '#f0d95c' },
-      { key: 'h', label: 'Zufriedenheit %', color: '#e39ac2', max: 100 },
+      { key: 'p', label: t('ui.statsPop'), color: '#6fe06f' },
+      { key: 'm', label: t('ui.statsMoney'), color: '#f0d95c' },
+      { key: 'h', label: t('ui.statsHappy'), color: '#e39ac2', max: 100 },
     ];
     series.forEach((s, k) => {
       const top = 10 + k * (h + 10);
@@ -1115,27 +1229,27 @@
         if (j === 0) x.moveTo(px, py); else x.lineTo(px, py);
       });
       x.strokeStyle = s.color; x.lineWidth = 1.5; x.stroke(); x.lineWidth = 1;
-      // Nulllinie bei Geld
       if (min < 0) {
         const py = top + h - (0 - min) / (max - min) * (h - 4) - 2;
         x.strokeStyle = 'rgba(255,107,107,0.5)';
         x.beginPath(); x.moveTo(pad, py); x.lineTo(pad + w, py); x.stroke();
       }
     });
-    // Szenario-Status
     const sc = sim.scenario;
     const el = $('scenarioStatus');
     if (sc) {
-      const state = sc.done ? (sc.won ? '🏆 GESCHAFFT!' : '❌ Frist verpasst') : '⏳ läuft bis Ende ' + sc.deadlineYear;
-      el.textContent = sc.name + ' — Ziel: ' + (sc.minPop || 0) + ' EW' +
-        (sc.minHappy ? ', ' + sc.minHappy + '% Zufriedenheit' : '') +
-        (sc.noCoal ? ', ohne Kohle' : '') + ' · ' + state;
+      const name = t('scen.' + sc.id);
+      const state = sc.done ? (sc.won ? t('ui.scenState.won') : t('ui.scenState.lost'))
+        : t('ui.scenState.run', { y: sc.deadlineYear });
+      el.textContent = name + ' — ' + t('ui.scenGoal') + ': ' + (sc.minPop || 0) + ' ' + t('ui.scenEW') +
+        (sc.minHappy ? ', ' + sc.minHappy + '%' : '') +
+        (sc.noCoal ? ', ' + t('ui.scenNoCoal') : '') + ' · ' + state;
     } else {
-      el.textContent = sim.sandbox ? 'Sandbox-Modus — unbegrenztes Geld.' : 'Freies Spiel ohne Zeitlimit.';
+      el.textContent = sim.sandbox ? t('ui.scenSandbox') : t('ui.scenFree');
     }
   }
 
-  // ---------- Speichern / Laden / Slots ----------
+  // ---------- Speichern / Slots ----------
   function slotKey(n) { return SLOT_KEYS[n] || SLOT_KEYS[0]; }
   function autosave() {
     if (!sim) return;
@@ -1143,7 +1257,7 @@
       localStorage.setItem(slotKey(currentSlot), sim.serialize());
       localStorage.setItem(slotKey(currentSlot) + '.meta', JSON.stringify({
         pop: sim.pop, date: sim.dateStr(), size: sim.w,
-        scen: sim.scenario ? sim.scenario.name : (sim.sandbox ? 'Sandbox' : 'Freies Spiel'),
+        scen: sim.scenario ? t('scen.' + sim.scenario.id) : (sim.sandbox ? t('scen.sandbox') : t('scen.free')),
         ts: Date.now(),
       }));
       localStorage.setItem(LAST_SLOT_KEY, String(currentSlot));
@@ -1168,7 +1282,6 @@
   }
   function pickFreeSlot() {
     for (let n = 0; n < 3; n++) if (!slotMeta(n)) return n;
-    // ältesten überschreiben
     let oldest = 0, oldestTs = Infinity;
     for (let n = 0; n < 3; n++) {
       const m = slotMeta(n);
@@ -1179,7 +1292,7 @@
 
   $('btnSave').addEventListener('click', () => {
     autosave();
-    toast('💾 Gespeichert in Slot ' + (currentSlot + 1) + '!');
+    toast(t('ui.saved', { n: currentSlot + 1 }));
     Sound.sfx.cash();
   });
   window.addEventListener('beforeunload', autosave);
@@ -1193,23 +1306,21 @@
       row.className = 'slotRow' + (m ? '' : ' empty');
       const info = m
         ? '<b>Slot ' + (n + 1) + '</b> — ' + m.scen + '<br>👤 ' + m.pop + ' · ' + m.date + ' · ' + m.size + '×' + m.size
-        : '<b>Slot ' + (n + 1) + '</b> — leer';
+        : '<b>Slot ' + (n + 1) + '</b> — ' + t('ui.slotEmpty');
       row.innerHTML = '<div class="slotInfo">' + info + '</div>';
       const btns = document.createElement('div');
       btns.className = 'slotBtns';
       if (m) {
         const load = document.createElement('button');
-        load.className = 'btn'; load.textContent = '▶ Laden';
+        load.className = 'btn'; load.textContent = t('ui.load');
         load.addEventListener('click', () => { loadSlot(n); });
         const exp = document.createElement('button');
         exp.className = 'btn'; exp.textContent = '⬇';
-        exp.title = 'Als Datei exportieren';
         exp.addEventListener('click', () => exportSlot(n));
         const del = document.createElement('button');
         del.className = 'btn'; del.textContent = '🗑';
-        del.title = 'Löschen';
         del.addEventListener('click', () => {
-          if (!confirm('Slot ' + (n + 1) + ' wirklich löschen?')) return;
+          if (!confirm(t('ui.confirmDelete', { n: n + 1 }))) return;
           localStorage.removeItem(slotKey(n));
           localStorage.removeItem(slotKey(n) + '.meta');
           renderSlots();
@@ -1230,7 +1341,7 @@
     a.download = 'retropolis-slot' + (n + 1) + '.json';
     a.click();
     URL.revokeObjectURL(a.href);
-    toast('⬇ Slot ' + (n + 1) + ' exportiert.');
+    toast(t('ui.exported', { n: n + 1 }));
   }
 
   $('btnImport').addEventListener('click', () => $('importFile').click());
@@ -1241,20 +1352,20 @@
     reader.onload = () => {
       try {
         const d = JSON.parse(reader.result);
-        if (!d.w || !d.h || !d.st) throw new Error('Kein Retropolis-Spielstand');
-        const test = Sim.load(reader.result); // validieren
+        if (!d.w || !d.h || !(d.st || (d.rle && d.rle.st))) throw new Error('invalid');
+        const test = Sim.load(reader.result);
         const n = pickFreeSlot();
         localStorage.setItem(slotKey(n), reader.result);
         localStorage.setItem(slotKey(n) + '.meta', JSON.stringify({
           pop: test.pop, date: test.dateStr(), size: test.w,
-          scen: test.scenario ? test.scenario.name : (test.sandbox ? 'Sandbox' : 'Import'),
+          scen: test.scenario ? t('scen.' + test.scenario.id) : (test.sandbox ? t('scen.sandbox') : 'Import'),
           ts: Date.now(),
         }));
         renderSlots();
-        toast('📂 Import in Slot ' + (n + 1) + ' gelungen!');
+        toast(t('ui.imported', { n: n + 1 }));
         Sound.sfx.cash();
       } catch (err) {
-        toast('❌ Import fehlgeschlagen: ' + err.message, 'bad');
+        toast(t('ui.importFail', { msg: err.message }), 'bad');
       }
       e.target.value = '';
     };
@@ -1271,7 +1382,7 @@
       startGame(loaded, true);
     } catch (err) {
       console.error('Spielstand defekt:', err);
-      toast('⚠ Spielstand in Slot ' + (n + 1) + ' ist defekt.', 'bad');
+      toast(t('ui.slotBroken', { n: n + 1 }), 'bad');
     }
   }
 
@@ -1316,7 +1427,7 @@
   $('btnRepay').addEventListener('click', () => {
     if (!sim) return;
     const r = sim.repayLoan();
-    if (!r.ok) { toast('❌ ' + r.reason, 'bad'); Sound.sfx.error(); }
+    if (!r.ok) { toast('❌ ' + t(r.reason), 'bad'); Sound.sfx.error(); }
     else Sound.sfx.cash();
     drainEvents();
     updateBudgetPanel();
@@ -1327,10 +1438,17 @@
     sim.taxRate = +e.target.value;
     $('taxVal').textContent = sim.taxRate + '%';
   });
+  $('musicVol').addEventListener('input', (e) => Sound.setMusicVol(e.target.value / 100));
+  $('sfxVol').addEventListener('input', (e) => Sound.setSfxVol(e.target.value / 100));
   $('chkDisaster').addEventListener('change', (e) => { if (sim) sim.disasters = e.target.checked; });
   $('chkNight').addEventListener('change', (e) => { nightEnabled = e.target.checked; });
   $('chkCrt').addEventListener('change', (e) => {
     $('scanlines').classList.toggle('off', !e.target.checked);
+  });
+  $('chkTouchConfirm').addEventListener('change', (e) => { touchConfirmMode = e.target.checked; });
+  $('langSel').addEventListener('change', (e) => {
+    I18N.setLang(e.target.value);
+    applyI18n();
   });
 
   function updateBudgetPanel() {
@@ -1339,20 +1457,23 @@
     const rows = $('budgetRows');
     if (b) {
       rows.innerHTML =
-        '<div><span>Steuereinnahmen (letzter Monat)</span><span class="plus">+' + b.income + ' €</span></div>' +
-        (b.casino ? '<div><span>Casino-Einnahmen</span><span class="plus">+' + b.casino + ' €</span></div>' : '') +
-        '<div><span>Unterhalt (Straßen, Gebäude, Strom)</span><span class="minus">−' + b.upkeep + ' €</span></div>' +
-        (b.interest ? '<div><span>Kreditzinsen</span><span class="minus">−' + b.interest + ' €</span></div>' : '') +
-        '<div><span><b>Bilanz</b></span><span class="' + (b.net >= 0 ? 'plus' : 'minus') + '"><b>' + (b.net >= 0 ? '+' : '') + b.net + ' €</b></span></div>';
+        '<div><span>' + t('ui.budgetIncome') + '</span><span class="plus">+' + b.income + ' €</span></div>' +
+        (b.casino ? '<div><span>' + t('ui.budgetCasino') + '</span><span class="plus">+' + b.casino + ' €</span></div>' : '') +
+        '<div><span>' + t('ui.budgetUpkeep') + '</span><span class="minus">−' + b.upkeep + ' €</span></div>' +
+        (b.interest ? '<div><span>' + t('ui.budgetInterest') + '</span><span class="minus">−' + b.interest + ' €</span></div>' : '') +
+        '<div><span><b>' + t('ui.budgetNet') + '</b></span><span class="' + (b.net >= 0 ? 'plus' : 'minus') + '"><b>' + (b.net >= 0 ? '+' : '') + b.net + ' €</b></span></div>';
     } else {
-      rows.innerHTML = '<div><span>Noch keine Monatsabrechnung.</span><span></span></div>';
+      rows.innerHTML = '<div><span>' + t('ui.budgetNone') + '</span><span></span></div>';
     }
-    $('debtVal').textContent = fmtMoney(sim.debt).replace('€ ', '') + ' €';
+    $('debtLabel').textContent = t('ui.debt', { v: fmtMoney(sim.debt) });
     $('btnRepay').disabled = sim.debt <= 0;
     $('taxSlider').value = sim.taxRate;
     $('taxVal').textContent = sim.taxRate + '%';
     $('chkDisaster').checked = sim.disasters;
     $('chkNight').checked = nightEnabled;
+    $('chkTouchConfirm').checked = touchConfirmMode;
+    $('musicVol').value = Math.round(Sound.musicVol * 100);
+    $('sfxVol').value = Math.round(Sound.sfxVol * 100);
   }
 
   $('btnMenu').addEventListener('click', () => {
@@ -1369,7 +1490,7 @@
     SCENARIOS.forEach(sc => {
       const d = document.createElement('div');
       d.className = 'scenOpt' + (ngScenario === sc.id ? ' sel' : '');
-      d.innerHTML = '<b>' + sc.name + '</b><small>' + sc.desc + '</small>';
+      d.innerHTML = '<b>' + t('scen.' + sc.id) + '</b><small>' + t('scen.' + sc.id + '.d') + '</small>';
       d.addEventListener('click', () => {
         ngScenario = sc.id;
         renderScenarioList();
@@ -1430,14 +1551,14 @@
     currentSlot = pickFreeSlot();
     $('newGamePanel').classList.add('hidden');
     startGame(fresh, false);
-    toast('💾 Autospeichern in Slot ' + (currentSlot + 1) + '.');
+    toast(t('ui.autosaveIn', { n: currentSlot + 1 }));
   });
 
   function buildScenario(sc, size, seed) {
     const s = new Sim(size, size, seed);
     if (sc.goal) {
       s.scenario = {
-        id: sc.id, name: sc.name,
+        id: sc.id,
         minPop: sc.goal.minPop || 0, minHappy: sc.goal.minHappy || 0,
         noCoal: !!sc.goal.noCoal,
         deadlineYear: s.year + sc.goal.years,
@@ -1450,7 +1571,6 @@
       s.money = 999999999;
     }
     if (sc.id === 'broke') {
-      // vorgebaute, marode Stadt
       s.money = 100000;
       const cx = size >> 1, cy = size >> 1;
       for (let y = cy - 8; y <= cy + 8; y += 4)
@@ -1466,8 +1586,7 @@
         if (s.canPlace(S_COAL, x, cy - 11).ok) { s.place(S_COAL, x, cy - 11); break; }
       }
       for (let x = cx - 12; x <= cx + 12; x++) s.place(S_WIRE, x, cy - 9);
-      // Stadt „entwickeln“, dann Kasse ruinieren
-      for (let t = 0; t < 400; t++) { s.tick(); s.events.length = 0; }
+      for (let t2 = 0; t2 < 400; t2++) { s.tick(); s.events.length = 0; }
       s.money = 800;
       s.debt = 20000;
       s.taxRate = 14;
@@ -1488,6 +1607,9 @@
     sim = simInstance;
     undoStack.length = 0; redoStack.length = 0;
     cars = []; trains = [];
+    clearPendingTap();
+    initChunks();
+    sim.allChanged = true;
     updateUndoButtons();
     $('titleScreen').classList.add('hidden');
     running = true;
@@ -1502,14 +1624,16 @@
     autosave();
     if (!fromSave) {
       if (sim.scenario) {
-        setTimeout(() => toast('🎯 ' + sim.scenario.name + ' — Ziel: ' + sim.scenario.minPop + ' Einwohner bis Ende ' + sim.scenario.deadlineYear + '!', 'milestone'), 400);
+        setTimeout(() => toast(t('ui.scenStart', {
+          name: t('scen.' + sim.scenario.id), pop: sim.scenario.minPop, y: sim.scenario.deadlineYear,
+        }), 'milestone'), 400);
       } else {
-        setTimeout(() => toast('👷 Willkommen, Bürgermeister:in! Baue zuerst Straßen (3) und ein Windrad (8).'), 400);
+        setTimeout(() => toast(t('ui.welcome')), 400);
       }
-      setTimeout(() => toast('💡 Zonen ziehen: Wohnen (5), Gewerbe (6), Industrie (7) — nahe der Straße!'), 4800);
-      setTimeout(() => toast('🚰 Ab Stufe 2 brauchen Zonen Wasser: Wasserturm oder Pumpwerk bauen.'), 9600);
+      setTimeout(() => toast(t('ui.tipZones')), 4800);
+      setTimeout(() => toast(t('ui.tipWater')), 9600);
     } else {
-      toast('▶ Weiter geht’s, Bürgermeister:in!');
+      toast(t('ui.resume'));
     }
   }
 
@@ -1529,7 +1653,7 @@
   function boot() {
     Sprites.init();
     makeIcons();
-    buildToolbar();
+    applyI18n();
     migrateLegacy();
     resize();
     showTitle();

@@ -300,6 +300,15 @@ select.btn { padding: 3px 4px; }
 }
 #scanlines.off { display: none; }
 
+/* ---------- Touch-Bestätigung ---------- */
+#touchConfirm {
+  position: absolute; z-index: 36;
+  display: flex; gap: 6px; padding: 6px;
+}
+#touchConfirm .btn { font-size: 16px; padding: 8px 14px; }
+#btnTcOk { border-color: var(--good); }
+#btnTcCancel { border-color: var(--bad); }
+
 /* ---------- Mobil ---------- */
 @media (max-width: 760px) {
   #topbar { font-size: 11px; gap: 4px; }
@@ -307,4 +316,13 @@ select.btn { padding: 3px 4px; }
   .tool img { width: 24px; height: 24px; }
   #minimapWrap { display: none; }
   #infoPanel { width: 180px; font-size: 11px; }
+}
+
+/* Grobe Zeiger (Touch): größere Ziele */
+@media (pointer: coarse) {
+  .tool { width: 64px; height: 70px; }
+  .tool img { width: 36px; height: 36px; }
+  .btn { padding: 6px 12px; font-size: 15px; }
+  .stat { padding: 4px 8px; }
+  #advisorBox { bottom: 130px; }
 }

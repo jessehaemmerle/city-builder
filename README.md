@@ -65,9 +65,14 @@ bring deine Stadt vom Dorf zur Metropole.
   Gebäuden. Zu wenig Erzeugung ⇒ Brownouts.
 - **Wassernetz**: Wasserturm (Radius 7) und Pumpwerk am Ufer (Radius 12) versorgen
   Zonen — ohne Wasser ist bei Stufe 2 Schluss.
-- **Verkehr**: Entwickelte Zonen erzeugen Verkehr auf den Straßen; Staus bremsen
-  Wachstum und Zufriedenheit. Animierte Autos fahren durch die Stadt, auf
-  Schienen rollt ein Zug. Schienen erschließen staufrei.
+- **Pendler-Wegfindung**: Wohnzonen pendeln über das echte Straßen-/Schienennetz
+  zum nächsten Arbeitsplatz (Multi-Source-BFS). Der Pendlerfluss erzeugt den
+  Verkehr auf genau den Straßen, die wirklich benutzt werden; Schienen schlucken
+  Verkehr. Getrennte Netze ohne Jobs bzw. Kunden wachsen nicht — Ursache statt
+  Radius-Näherung.
+- **Wachstums-Diagnose**: Das Info-Werkzeug zeigt pro Zone alle Wachstumsfaktoren
+  mit ✓/✗ (Strom, Anbindung, Netzverbindung, Nachfrage, Wasser, Umwelt, Stau,
+  Landwert, Steuern) — nie wieder rätseln, warum nichts wächst.
 - **Brücken**: Straßen, Schienen und Leitungen können Flüsse überqueren (3× Kosten).
 - **Landwert**: Wasserlage, Parks und Sicherheit steigern ihn; Verschmutzung und
   Stau drücken ihn. Hoher Landwert ⇒ Luxus-Gebäudevarianten und schnelleres Wachstum.
@@ -91,15 +96,20 @@ bring deine Stadt vom Dorf zur Metropole.
 
 ### Moderne Features im Retro-Gewand
 
-- Drag-Bau mit Live-Vorschau und Kostenanzeige, **Undo/Redo**
+- Drag-Bau mit Live-Vorschau und Kostenanzeige, **Undo/Redo** (Strg+Z/Y)
 - 10 Daten-Overlays: Strom, Wasser, Verkehr, Landwert, Umwelt, Polizei,
-  Feuerwehr, Bildung, Gesundheit, Freizeit
+  Feuerwehr, Bildung, Gesundheit, Freizeit — Problemzonen zusätzlich
+  **schraffiert** (farbenblind-tauglich)
 - **Statistik-Panel** mit Verlaufsgraphen (Einwohner, Kasse, Zufriedenheit)
 - **Tag/Nacht-Zyklus** mit leuchtenden Fenstern und Auto-Scheinwerfern
 - **3 Save-Slots** mit Autosave, Export/Import als JSON-Datei
+  (RLE-komprimiertes Format v4, lädt auch alte Spielstände)
+- **Zweisprachig**: Deutsch/Englisch, automatisch erkannt, umschaltbar
+- **Touch-optimiert**: größere Ziele, Pinch-Zoom, optionale Bau-Bestätigung
 - Minimap, 3 Geschwindigkeiten + Pause, Meldungs-Toasts, Einsteiger-Tipps
 - Animiertes Wasser, drehende Windräder, Rauch, fahrende Autos und Züge
-- CRT-Scanline-Effekt (abschaltbar), Chiptune-Soundtrack (abschaltbar)
+- CRT-Scanline-Effekt (abschaltbar), **2 Chiptune-Songs** mit ruhigeren
+  Nacht-Varianten, Ambient-Sound (Wasserrauschen, Verkehr), Lautstärkeregler
 
 ## 🗂 Projektstruktur
 
@@ -107,25 +117,52 @@ bring deine Stadt vom Dorf zur Metropole.
 ├── Dockerfile            # nginx:alpine, liefert web/ aus
 ├── docker-compose.yml    # Port 8080 → 80
 ├── nginx.conf
+├── package.json          # npm test / benchmark / test:e2e
+├── test/
+│   ├── load-sim.js       # lädt die DOM-freie Simulation in Node
+│   ├── unit.test.js      # RLE, Save v4 + Migration, Determinismus,
+│   │                     #   Pendler-Konnektivität, Bau-Regeln, Kredite
+│   ├── soak.test.js      # 10 Spieljahre Referenzstadt (Stabilität)
+│   ├── benchmark.js      # Wachstumskurven nach Balancing-Änderungen
+│   └── e2e.test.js       # Browser-Test (Playwright, eigener Static-Server)
 └── web/
     ├── index.html        # UI-Gerüst (Statusleiste, Werkzeugleiste, Dialoge)
-    ├── style.css         # SNES-inspiriertes UI, CRT-Effekt
+    ├── style.css         # SNES-inspiriertes UI, CRT-Effekt, Touch-Ziele
     └── js/
+        ├── balance.js    # ALLE Tuning-Konstanten an einem Ort
+        ├── i18n.js       # Deutsch/Englisch
         ├── sprites.js    # Pixel-Art-Engine: alle Texturen als Code, Nacht-Atlas
-        ├── sim.js        # Simulation: Terrain, Strom, Wasser, RCI, Landwert,
-        │                 #   Verkehr, Budget/Kredite, Katastrophen, Szenarien
-        ├── audio.js      # WebAudio-Chiptunes & SFX
-        └── main.js       # Rendering, Eingabe, UI, Fahrzeuge, Tag/Nacht,
-                          #   Undo/Redo, Berater, Statistik, Save-Slots
+        ├── sim.js        # DOM-freie, deterministische Simulation: Terrain,
+        │                 #   Strom, Wasser, Pendler-BFS/Verkehr, Landwert,
+        │                 #   Budget/Kredite, Katastrophen, Szenarien, RLE-Saves
+        ├── audio.js      # WebAudio-Chiptunes, Ambient, SFX
+        └── main.js       # Chunk-Renderer, Eingabe, UI, Fahrzeuge, Tag/Nacht,
+                          #   Undo/Redo, Berater, Diagnose, Statistik, Slots
 ```
 
-Reines Vanilla-JavaScript (ES2020), keine Abhängigkeiten, kein Build-Schritt —
-der Container ist ein statischer nginx mit ~100 KB Spielcode.
+Reines Vanilla-JavaScript (ES2020), keine Laufzeit-Abhängigkeiten, kein
+Build-Schritt — der Container ist ein statischer nginx mit ~130 KB Spielcode.
 
-## 🧪 Entwicklung
+**Rendering**: Statisches (Terrain, Gebäude, Straßen) wird in 16×16-Kachel-Chunks
+vorgebacken und nur bei Änderungen neu gezeichnet; pro Frame laufen nur Wasser,
+Feuer, Fahrzeuge, Symbole und Overlays — dadurch bleiben auch 96×96-Karten und
+Mobilgeräte flüssig.
 
-Lokal ohne Docker genügt ein beliebiger statischer Server:
+**Determinismus**: Gleicher Seed + gleiche Aktionen ⇒ exakt gleicher Verlauf
+(durch Unit-Test abgesichert). Fahrzeuge und Musik sind rein kosmetisch und
+davon ausgenommen.
+
+## 🧪 Entwicklung & Tests
 
 ```bash
-npx http-server web -p 8080
+npm start              # lokaler Server ohne Docker (http-server)
+npm test               # Unit- + Soak-Tests (reines Node, keine Dependencies)
+npm run benchmark      # Wachstumskurven nach Änderungen an balance.js
+npm run test:e2e       # Browser-E2E (benötigt Playwright + Chromium):
+                       #   PLAYWRIGHT_PATH=… CHROMIUM_PATH=… npm run test:e2e
 ```
+
+Alle Balancing-Werte liegen zentral in `web/js/balance.js`. Nach Änderungen
+`npm run benchmark` ausführen und die Kurven vergleichen — der Benchmark hat
+z. B. aufgedeckt, dass ein zerstörtes Einzel-Kraftwerk eine Stadt früher binnen
+Tagen auslöschte (Verfallsrate inzwischen entschärft).
