@@ -33,9 +33,17 @@
     <button class="btn spd" id="spd3" title="Turbo">▶▶▶</button>
   </div>
 
+  <div class="group">
+    <button class="btn" id="btnUndo" title="Rückgängig (Strg+Z)">↶</button>
+    <button class="btn" id="btnRedo" title="Wiederholen (Strg+Y)">↷</button>
+  </div>
+
   <select id="overlaySel" class="btn" title="Daten-Ansicht (Overlay)">
     <option value="">Ansicht: Normal</option>
     <option value="power">⚡ Stromnetz</option>
+    <option value="water">🚰 Wasser</option>
+    <option value="traffic">🚗 Verkehr</option>
+    <option value="landv">🏷 Landwert</option>
     <option value="poll">☁ Umwelt</option>
     <option value="police">🚓 Polizei</option>
     <option value="fire">🚒 Feuerwehr</option>
@@ -45,6 +53,7 @@
   </select>
 
   <div class="group">
+    <button class="btn" id="btnStats" title="Statistik &amp; Verlauf">📈</button>
     <button class="btn" id="btnSfx" title="Soundeffekte an/aus">🔊</button>
     <button class="btn" id="btnMusic" title="Musik an/aus">🎵</button>
     <button class="btn" id="btnBudget" title="Budget &amp; Optionen">📒</button>
@@ -63,12 +72,38 @@
 <div id="budgetPanel" class="panel dialog hidden">
   <h2>📒 Budget &amp; Optionen</h2>
   <div id="budgetRows"></div>
+  <div class="row" id="loanRow">
+    <span>🏦 Schulden: <b id="debtVal">0 €</b> (1,5% Zins/Monat)</span>
+    <span class="loanBtns">
+      <button class="btn" id="btnLoan">+5.000 € Kredit</button>
+      <button class="btn" id="btnRepay">Tilgen</button>
+    </span>
+  </div>
   <label class="row">Steuersatz: <b id="taxVal">9%</b>
     <input type="range" id="taxSlider" min="0" max="20" value="9">
   </label>
-  <label class="row"><input type="checkbox" id="chkDisaster" checked> Katastrophen (Brände)</label>
+  <label class="row"><input type="checkbox" id="chkDisaster" checked> Katastrophen (Feuer, Tornado, Hochwasser, …)</label>
+  <label class="row"><input type="checkbox" id="chkNight" checked> Tag/Nacht-Zyklus</label>
   <label class="row"><input type="checkbox" id="chkCrt" checked> CRT-Scanlines</label>
   <div class="row right"><button class="btn" id="btnBudgetClose">Schließen</button></div>
+</div>
+
+<!-- Statistik-Panel -->
+<div id="statsPanel" class="panel dialog hidden">
+  <h2>📈 Stadt-Statistik</h2>
+  <div id="scenarioStatus"></div>
+  <canvas id="statsCanvas" width="440" height="260"></canvas>
+  <div class="row right"><button class="btn" id="btnStatsClose">Schließen</button></div>
+</div>
+
+<!-- Berater -->
+<div id="advisorBox" class="panel hidden">
+  <canvas id="advisorFace" width="16" height="16"></canvas>
+  <div>
+    <div id="advisorName"></div>
+    <div id="advisorText"></div>
+  </div>
+  <button class="btn" id="btnAdvisorOk">OK</button>
 </div>
 
 <!-- Minimap -->
@@ -85,14 +120,50 @@
     <div id="titleButtons">
       <button class="btn big hidden" id="btnContinue">▶ WEITERSPIELEN</button>
       <button class="btn big" id="btnNew">★ NEUE STADT</button>
+      <button class="btn big" id="btnSlots">💾 SPIELSTÄNDE</button>
     </div>
     <p class="hint">
       🖱 Linksklick/Ziehen: bauen &nbsp;·&nbsp; Rechtsklick/Ziehen: Karte bewegen &nbsp;·&nbsp; Mausrad: Zoom<br>
-      ⌨ 1–9: Werkzeuge &nbsp;·&nbsp; Leertaste: Pause &nbsp;·&nbsp; ESC: Auswahl-Werkzeug<br><br>
-      Verbinde Zonen mit <b>Straßen</b> und <b>Strom</b>, dann wächst deine Stadt!
+      ⌨ 1–0: Werkzeuge &nbsp;·&nbsp; Leertaste: Pause &nbsp;·&nbsp; Strg+Z: Rückgängig &nbsp;·&nbsp; ESC: Info-Werkzeug<br><br>
+      Verbinde Zonen mit <b>Straßen</b>, <b>Strom</b> und <b>Wasser</b>, dann wächst deine Stadt!
     </p>
     <p class="credits">© 199X HAEMMERLE SOFT · PRESS START</p>
   </div>
+</div>
+
+<!-- Neues Spiel -->
+<div id="newGamePanel" class="panel dialog hidden">
+  <h2>★ Neue Stadt gründen</h2>
+  <div id="scenarioList"></div>
+  <div class="row" id="mapOpts">
+    <label>Größe:
+      <select id="sizeSel" class="btn">
+        <option value="48">Klein (48×48)</option>
+        <option value="64" selected>Mittel (64×64)</option>
+        <option value="96">Groß (96×96)</option>
+      </select>
+    </label>
+    <label>Seed: <input type="text" id="seedInput" size="9"></label>
+    <button class="btn" id="btnDice" title="Zufalls-Seed">🎲</button>
+  </div>
+  <div class="row" id="previewRow">
+    <canvas id="mapPreview" width="192" height="192"></canvas>
+    <span id="previewNote">Kartenvorschau</span>
+  </div>
+  <div class="row right">
+    <button class="btn" id="btnNgCancel">Abbrechen</button>
+    <button class="btn" id="btnNgStart">▶ START</button>
+  </div>
+</div>
+
+<!-- Spielstände -->
+<div id="slotsPanel" class="panel dialog hidden">
+  <h2>💾 Spielstände</h2>
+  <div id="slotList"></div>
+  <div class="row"><input type="file" id="importFile" accept=".json" class="hidden">
+    <button class="btn" id="btnImport">📂 Spielstand importieren…</button>
+  </div>
+  <div class="row right"><button class="btn" id="btnSlotsClose">Schließen</button></div>
 </div>
 
 <!-- CRT-Effekt -->

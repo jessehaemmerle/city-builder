@@ -43,6 +43,7 @@ const Sprites = (() => {
     F: '#ffd93b', // Feuer gelb
     u: '#e86a17', // Feuer tief
     p: '#e39ac2', // Blüten rosa
+    v: '#7a5cb8', // Violett (Casino)
     A: '#54545e', // Asphalt
     a: '#44444d', // Asphalt dunkel
     S: '#a8b0bf', // Gehsteig
@@ -266,6 +267,148 @@ const Sprites = (() => {
     x.fillStyle = P.F;
     x.fillRect(3, 3, 2, 2); x.fillRect(27, 3, 2, 2); x.fillRect(3, 27, 2, 2); x.fillRect(27, 27, 2, 2);
     return c;
+  }
+
+  // ---------- Schiene: Autotile (Maske N=1 E=2 S=4 W=8) ----------
+  function railTile(mask) {
+    const c = cv(TILE, TILE), x = c.getContext('2d');
+    let N = mask & 1, E = mask & 2, S = mask & 4, W = mask & 8;
+    if (!N && !E && !S && !W) { E = 2; W = 8; } // Stummel
+    const tie = '#6b4a2d', rail = '#c0c6d4', railD = '#3a4258', ballast = '#7d7f86';
+    if (N || S) {
+      const y0 = N ? 0 : 4, y1 = S ? 15 : 11;
+      x.fillStyle = ballast; x.fillRect(4, y0, 8, y1 - y0 + 1);
+      x.fillStyle = tie;
+      for (let yy = y0 + 1; yy <= y1; yy += 3) x.fillRect(3, yy, 10, 1);
+      x.fillStyle = rail; x.fillRect(5, y0, 1, y1 - y0 + 1); x.fillRect(10, y0, 1, y1 - y0 + 1);
+      x.fillStyle = railD; x.fillRect(6, y0, 1, y1 - y0 + 1); x.fillRect(11, y0, 1, y1 - y0 + 1);
+    }
+    if (E || W) {
+      const x0 = W ? 0 : 4, x1 = E ? 15 : 11;
+      x.fillStyle = ballast; x.fillRect(x0, 4, x1 - x0 + 1, 8);
+      x.fillStyle = tie;
+      for (let xx = x0 + 1; xx <= x1; xx += 3) x.fillRect(xx, 3, 1, 10);
+      x.fillStyle = rail; x.fillRect(x0, 5, x1 - x0 + 1, 1); x.fillRect(x0, 10, x1 - x0 + 1, 1);
+      x.fillStyle = railD; x.fillRect(x0, 6, x1 - x0 + 1, 1); x.fillRect(x0, 11, x1 - x0 + 1, 1);
+    }
+    return c;
+  }
+
+  // ---------- Brücke (Straße/Schiene über Wasser) ----------
+  function bridgeTile(mask, kind) {
+    const c = cv(TILE, TILE), x = c.getContext('2d');
+    const N = mask & 1, E = mask & 2, S = mask & 4, W = mask & 8;
+    const vert = (N || S) && !(E || W);
+    const deck = '#9b7442', deckD = '#7a5a32', rail = '#4a3018';
+    // Deck
+    if (vert) {
+      x.fillStyle = deck; x.fillRect(2, 0, 12, 16);
+      x.fillStyle = deckD; for (let yy = 0; yy < 16; yy += 3) x.fillRect(2, yy, 12, 1);
+      x.fillStyle = rail; x.fillRect(2, 0, 1, 16); x.fillRect(13, 0, 1, 16);
+      x.fillStyle = P.K; x.fillRect(1, 0, 1, 16); x.fillRect(14, 0, 1, 16);
+    } else if ((E || W) && !(N || S)) {
+      x.fillStyle = deck; x.fillRect(0, 2, 16, 12);
+      x.fillStyle = deckD; for (let xx = 0; xx < 16; xx += 3) x.fillRect(xx, 2, 1, 12);
+      x.fillStyle = rail; x.fillRect(0, 2, 16, 1); x.fillRect(0, 13, 16, 1);
+      x.fillStyle = P.K; x.fillRect(0, 1, 16, 1); x.fillRect(0, 14, 16, 1);
+    } else {
+      x.fillStyle = deck; x.fillRect(0, 0, 16, 16);
+      x.fillStyle = deckD;
+      for (let yy = 0; yy < 16; yy += 3) x.fillRect(0, yy, 16, 1);
+      x.fillStyle = P.K; x.strokeStyle = P.K;
+    }
+    // Fahrbahn / Gleis obendrauf
+    const g = c.getContext('2d');
+    if (kind === 'road') {
+      if (vert) {
+        g.fillStyle = P.A; g.fillRect(4, 0, 8, 16);
+        g.fillStyle = P.y; g.fillRect(7, 1, 1, 2); g.fillRect(7, 6, 1, 2); g.fillRect(7, 11, 1, 2);
+      } else {
+        g.fillStyle = P.A; g.fillRect(0, 4, 16, 8);
+        g.fillStyle = P.y; g.fillRect(1, 7, 2, 1); g.fillRect(6, 7, 2, 1); g.fillRect(11, 7, 2, 1);
+      }
+    } else if (kind === 'rail') {
+      g.drawImage(railTile(mask), 0, 0);
+    }
+    return c;
+  }
+
+  // ---------- Tornado (2 Frames) ----------
+  const TORNADO0 = art([
+    '..ggwggwggwgg...',
+    '.gwggwggwggwgg..',
+    '..gggwggwggg....',
+    '...ggwggwggg....',
+    '...gwggwggg.....',
+    '....ggwggg......',
+    '....gwggg.......',
+    '.....gggg.......',
+    '.....ggg........',
+    '......gg........',
+    '......gg........',
+    '.....ggg........',
+    '......gg........',
+    '......g.........',
+    '.....gg.........',
+    '................',
+  ]);
+  const TORNADO1 = art([
+    '.gwggwggwggwgg..',
+    '..ggwggwggwgg...',
+    '...gwggwgggg....',
+    '...gggwggwgg....',
+    '....ggwgggg.....',
+    '....gwggwg......',
+    '.....ggwgg......',
+    '.....gggg.......',
+    '......ggg.......',
+    '......gg........',
+    '.....gg.........',
+    '......gg........',
+    '.....gg.........',
+    '......g.........',
+    '......gg........',
+    '................',
+  ]);
+
+  // ---------- UFO ----------
+  const UFO = art([
+    '................',
+    '......KKKK......',
+    '.....KccqcK.....',
+    '....KccqqccK....',
+    '..KKKKKKKKKKKK..',
+    '.KmmgmmgmmgmmgK.',
+    '..KKKKKKKKKKKK..',
+    '...KqK.KqK.KqK..',
+    '................',
+    '................',
+    '................',
+    '................',
+    '................',
+    '................',
+    '................',
+    '................',
+  ]);
+
+  // ---------- Nacht-Varianten: dunkler, Fenster (q) leuchten ----------
+  function nightify(src) {
+    const n = cv(src.width, src.height), x = n.getContext('2d');
+    x.drawImage(src, 0, 0);
+    const id = x.getImageData(0, 0, n.width, n.height), d = id.data;
+    for (let i = 0; i < d.length; i += 4) {
+      if (d[i + 3] === 0) continue;
+      const r = d[i], g = d[i + 1], b = d[i + 2];
+      if (r === 156 && g === 232 && b === 255) { // q → warmes Fensterlicht
+        d[i] = 255; d[i + 1] = 224; d[i + 2] = 102;
+      } else {
+        d[i] = r * 0.38 | 0;
+        d[i + 1] = g * 0.44 | 0;
+        d[i + 2] = Math.min(255, b * 0.72 + 22) | 0;
+      }
+    }
+    x.putImageData(id, 0, 0);
+    return n;
   }
 
   // ============================================================
@@ -688,21 +831,265 @@ const Sprites = (() => {
     '................................',
   ]);
 
+  // Wasserturm
+  const WTOWER = art([
+    '................',
+    '....KKKKKKKK....',
+    '...KbbbbbbbbK...',
+    '...KbWbbbbbbK...',
+    '...KbWbbbbbbK...',
+    '...KbbbbbbbbK...',
+    '...KBBBBBBBBK...',
+    '....KKKKKKKK....',
+    '.....Kn..nK.....',
+    '.....Kn..nK.....',
+    '....Kn....nK....',
+    '....Kn....nK....',
+    '...Kn......nK...',
+    '...Kn......nK...',
+    '..KKKK....KKKK..',
+    '................',
+  ]);
+
+  // Pumpwerk (muss am Wasser stehen)
+  const PUMP = art([
+    '................',
+    '................',
+    '..KKKKKKKKKK....',
+    '..KbbbbbbbbK....',
+    '..KbWWbbbbbK....',
+    '..KbbbbbbbbK....',
+    '..KKKKKKKKKKKK..',
+    '..KwwwwwwwwKMK..',
+    '..KwqqwwqqwKMK..',
+    '..KwqqwwqqwKMK..',
+    '..KwwwwwwwwKMK..',
+    '..KwwwKKwwwKMK..',
+    '..KwwwKNwwwKMK..',
+    '..KKKKKKKKKKKK..',
+    '.EEEEEEEEEEEEEE.',
+    '................',
+  ]);
+
+  // Rathaus
+  const TOWNHALL = art([
+    '.......Ky.......',
+    '.......Kyy......',
+    '.......K........',
+    '......KKKK......',
+    '.....KwwwwK.....',
+    '....KwwwwwwK....',
+    '.KKKKKKKKKKKKKK.',
+    '.KWWWWWWWWWWWWK.',
+    '.KWwWWwWWwWWwWK.',
+    '.KWwWWwWWwWWwWK.',
+    '.KWWWWWWWWWWWWK.',
+    '.KWxxWWKKWWxxWK.',
+    '.KWxxWWKNWWxxWK.',
+    '.KKKKKKKKKKKKKK.',
+    '.EEEEEEEEEEEEEE.',
+    '................',
+  ]);
+
+  // Denkmal (Obelisk)
+  const MONUMENT = art([
+    '................',
+    '.......KK.......',
+    '......KwwK......',
+    '......KwwK......',
+    '......KwgK......',
+    '......KwgK......',
+    '......KwgK......',
+    '......KwgK......',
+    '.....KwwggK.....',
+    '.....KwwggK.....',
+    '....KKKKKKKK....',
+    '....KggggggK....',
+    '...KKKKKKKKKK...',
+    '.eeyeeeeeeepeee.',
+    '.eeeeeeeeeeeeee.',
+    '................',
+  ]);
+
+  // Casino (Neon leuchtet nachts)
+  const CASINO = art([
+    '................',
+    '.KKKKKKKKKKKKKK.',
+    '.KvvvvvvvvvvvvK.',
+    '.KvqvqvqvqvqvqK.',
+    '.KvvvvvvvvvvvvK.',
+    '.KKKKKKKKKKKKKK.',
+    '.KppppppppppppK.',
+    '.KpqqppqqppqqpK.',
+    '.KpqqppqqppqqpK.',
+    '.KppppppppppppK.',
+    '.KpqqppKKppqqpK.',
+    '.KpqqppKNppqqpK.',
+    '.KppppppppppppK.',
+    '.KKKKKKKKKKKKKK.',
+    '.EEEEEEEEEEEEEE.',
+    '................',
+  ]);
+
+  // Luxus-Wohnturm (hoher Landwert, Stufe 4)
+  const R5 = art([
+    '....KKKKKKKK....',
+    '....KWWccWWK....',
+    '....KWWccWWK....',
+    '.KKKKKKKKKKKKKK.',
+    '.KWcqcWccWcqcWK.',
+    '.KWcqcWccWcqcWK.',
+    '.KWWWWWWWWWWWWK.',
+    '.KWcqcWccWcqcWK.',
+    '.KWcqcWccWcqcWK.',
+    '.KWWWWWWWWWWWWK.',
+    '.KWcqcWccWcqcWK.',
+    '.KWcqcWKKWcqcWK.',
+    '.KWWWWWKNWWWWWK.',
+    '.KKKKKKKKKKKKKK.',
+    '.EEEEEEEEEEEEEE.',
+    '................',
+  ]);
+
+  // Gold-Büroturm (hoher Landwert, Stufe 4)
+  const C5 = art([
+    '.......KK.......',
+    '......KyyK......',
+    '....KKKKKKKK....',
+    '....KyqyyqyK....',
+    '....KyqyyqyK....',
+    '.KKKKKKKKKKKKKK.',
+    '.KyqyYyqyYyqyYK.',
+    '.KyqyYyqyYyqyYK.',
+    '.KYYYYYYYYYYYYK.',
+    '.KyqyYyqyYyqyYK.',
+    '.KyqyYyqyYyqyYK.',
+    '.KYYYYYYYYYYYYK.',
+    '.KmmmmmKNmmmmmK.',
+    '.KKKKKKKKKKKKKK.',
+    '.EEEEEEEEEEEEEE.',
+    '................',
+  ]);
+
+  // ---------- Berater-Porträts (16x16) ----------
+  const SKIN = { H: '#e8b58a', h2: '#c98f66' };
+  const ADV_FINANCE = art([
+    '................',
+    '....gggggggg....',
+    '...gggggggggg...',
+    '...ggHHHHHHgg...',
+    '...gHHHHHHHHg...',
+    '...KHHHHHHHHK...',
+    '..HKWWKHHKWWKH..',
+    '...HHHHHHHHHH...',
+    '...HHHggggHHH...',
+    '...HHHHHHHHHH...',
+    '....HHHHHHHH....',
+    '..KKKdddddKKK...',
+    '.KKddddddddddKK.',
+    '.KdddddWWdddddK.',
+    '.KdddddrrdddddK.',
+    '................',
+  ], SKIN);
+  const ADV_POWER = art([
+    '................',
+    '....yyyyyyyy....',
+    '...yyyyyyyyyy...',
+    '..KyyyyyyyyyyK..',
+    '..KKKKKKKKKKKK..',
+    '...KHHHHHHHHK...',
+    '...HHKHHHHKHH...',
+    '...HHHHHHHHHH...',
+    '...HHHHKKHHHH...',
+    '...HHHHHHHHHH...',
+    '....HHHHHHHH....',
+    '..KKKoooooKKK...',
+    '.KKooooooooooKK.',
+    '.KoooooyyoooooK.',
+    '.KooooooooooooK.',
+    '................',
+  ], SKIN);
+  const ADV_ENV = art([
+    '......TT........',
+    '....TTTTTTTT....',
+    '...TTTTTTTTTT...',
+    '...TTHHHHHHTT...',
+    '...TTHHHHHHTT...',
+    '...KHHHHHHHHK...',
+    '...HHKHHHHKHH...',
+    '...HHHHHHHHHH...',
+    '...HHHHKKHHHH...',
+    '...HHHHHHHHHH...',
+    '....HHHHHHHH....',
+    '..KKKeeeeeKKK...',
+    '.KKeeeeeeeeeeKK.',
+    '.KeeeeelleeeeeK.',
+    '.KeeeeeeeeeeeeK.',
+    '................',
+  ], SKIN);
+  const ADV_FIRE = art([
+    '................',
+    '....rrrrrrrr....',
+    '...rrrrrrrrrr...',
+    '..KrrrryyrrrrK..',
+    '..KKKKKKKKKKKK..',
+    '...KHHHHHHHHK...',
+    '...HHKHHHHKHH...',
+    '...HHHHHHHHHH...',
+    '...HHNNNNNNHH...',
+    '...HHHHKKHHHH...',
+    '....HHHHHHHH....',
+    '..KKKrrrrrKKK...',
+    '.KKrrrrrrrrrrKK.',
+    '.KrrrrryyrrrrrK.',
+    '.KrrrrrrrrrrrrK.',
+    '................',
+  ], SKIN);
+  const ADV_WATER = art([
+    '................',
+    '....bbbbbbbb....',
+    '...bbbbbbbbbb...',
+    '..KbbbbWWbbbbK..',
+    '..KKKKKKKKKKKK..',
+    '...KHHHHHHHHK...',
+    '...HHKHHHHKHH...',
+    '...HHHHHHHHHH...',
+    '...HHHHKKHHHH...',
+    '...HHHHHHHHHH...',
+    '....HHHHHHHH....',
+    '..KKKbbbbbKKK...',
+    '.KKbbbbbbbbbbKK.',
+    '.KbbbbbWWbbbbbK.',
+    '.KbbbbbbbbbbbbK.',
+    '................',
+  ], SKIN);
+
   // ---------- Aufbau des Sprite-Stores ----------
+  const night = {};   // Nacht-Varianten, gleiche Struktur wie store
+
   function init() {
     store.grass = [grassTile(1), grassTile(2), grassTile(3), grassTile(4)];
     store.water = [waterTile(0), waterTile(1), waterTile(2), waterTile(3)];
     store.sand = [sandTile(11), sandTile(12)];
     store.tree = TREE;
     store.rubble = rubbleTile();
-    store.road = []; store.wire = [];
-    for (let m = 0; m < 16; m++) { store.road[m] = roadTile(m); store.wire[m] = wireTile(m); }
+    store.road = []; store.wire = []; store.rail = [];
+    store.bridgeRoad = []; store.bridgeRail = [];
+    for (let m = 0; m < 16; m++) {
+      store.road[m] = roadTile(m);
+      store.wire[m] = wireTile(m);
+      store.rail[m] = railTile(m);
+      store.bridgeRoad[m] = bridgeTile(m, 'road');
+      store.bridgeRail[m] = bridgeTile(m, 'rail');
+    }
     store.zoneR = zoneTile('R', '#6fe06f', '#1d5c1d');
     store.zoneC = zoneTile('C', '#6fb8ff', '#173a66');
     store.zoneI = zoneTile('I', '#ffd35c', '#6b520f');
     store.r = [null, R1, R2, R3, R4];
     store.c = [null, C1, C2, C3, C4];
     store.i = [null, I1, I2, I3, I4];
+    store.rLux = R5;
+    store.cLux = C5;
     store.park = PARK;
     store.police = POLICE;
     store.firedep = FIREDEP;
@@ -711,15 +1098,34 @@ const Sprites = (() => {
     store.wind = [WIND0, WIND1];
     store.coal = COAL;
     store.stadium = stadiumSprite();
+    store.wtower = WTOWER;
+    store.pump = PUMP;
+    store.townhall = TOWNHALL;
+    store.monument = MONUMENT;
+    store.casino = CASINO;
     store.fire = [fireTile(0), fireTile(1), fireTile(2)];
     store.smoke = [smokeTile(0), smokeTile(1)];
+    store.tornado = [TORNADO0, TORNADO1];
+    store.ufo = UFO;
+    store.advisors = {
+      finance: ADV_FINANCE, power: ADV_POWER, env: ADV_ENV,
+      fire: ADV_FIRE, water: ADV_WATER,
+    };
+    // Nacht-Atlas erzeugen (Fenster leuchten, Rest abgedunkelt)
+    for (const key in store) {
+      const v = store[key];
+      if (key === 'advisors') continue;
+      if (Array.isArray(v)) night[key] = v.map(c => c ? nightify(c) : null);
+      else night[key] = nightify(v);
+    }
   }
 
-  function get(name, frame) {
-    const s = store[name];
+  function get(name, frame, isNight) {
+    const src = isNight && night[name] ? night : store;
+    const s = src[name];
     if (Array.isArray(s)) return s[frame % s.length];
     return s;
   }
 
-  return { init, get, store, art, P };
+  return { init, get, store, night, art, P };
 })();
