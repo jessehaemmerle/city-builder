@@ -8,7 +8,7 @@
   const DICT = {
     de: {
       // Gebäude
-      'b.road': 'Straße', 'b.wire': 'Stromleitung', 'b.rail': 'Schiene',
+      'b.road': 'Straße', 'b.wire': 'Stromleitung', 'b.rail': 'Schiene', 'b.pipe': 'Wasserleitung',
       'b.rzone': 'Wohngebiet', 'b.czone': 'Gewerbegebiet', 'b.izone': 'Industriegebiet',
       'b.park': 'Park', 'b.police': 'Polizeiwache', 'b.firedep': 'Feuerwache',
       'b.school': 'Schule', 'b.hospital': 'Krankenhaus', 'b.wind': 'Windrad',
@@ -17,7 +17,7 @@
       'b.monument': 'Denkmal', 'b.casino': 'Casino',
       // Werkzeuge (Kurznamen)
       't.point': 'Info', 't.dozer': 'Abriss', 't.road': 'Straße', 't.rail': 'Schiene',
-      't.wire': 'Leitung', 't.rz': 'Wohnen', 't.cz': 'Gewerbe', 't.iz': 'Industrie',
+      't.wire': 'Leitung', 't.pipe': 'W-Leitung', 't.rz': 'Wohnen', 't.cz': 'Gewerbe', 't.iz': 'Industrie',
       't.wind': 'Windrad', 't.coal': 'Kohle-KW', 't.wtower': 'W-Turm', 't.pump': 'Pumpwerk',
       't.park': 'Park', 't.police': 'Polizei', 't.firedep': 'Feuerwehr', 't.school': 'Schule',
       't.hospital': 'Klinik', 't.stadium': 'Stadion', 't.townhall': 'Rathaus',
@@ -53,11 +53,13 @@
       // Berater
       'adv.finance': 'Kämmerer Konrad', 'adv.power': 'Ing. Elke Watt', 'adv.env': 'Dr. Flora Grün',
       'adv.fire': 'Brandmeister Falk', 'adv.water': 'Wassermeisterin Wilma',
+      'adv.watershort': 'Wassermeisterin Wilma',
       'advmsg.finance': 'Die Kasse schrumpft! Erhöhe die Steuern oder überdenke teure Gebäude — zur Not hilft ein Kredit (📒 Budget).',
       'advmsg.power': 'Das Stromnetz ist überlastet! Wir brauchen mehr Kraftwerke, sonst fallen Häuser und Betriebe aus.',
       'advmsg.env': 'Die Luft in den Wohngebieten ist schlecht! Mehr Parks, Industrie weiter weg von Wohnungen — und Kohlekraft meiden.',
       'advmsg.fire': 'Weite Teile der Stadt sind ohne Feuerwehr! Ein Brand könnte sich ungehindert ausbreiten.',
-      'advmsg.water': 'Ohne Wasserversorgung wachsen Zonen nicht über Stufe 2 hinaus! Baue Wassertürme oder ein Pumpwerk am Fluss.',
+      'advmsg.water': 'Ohne Wasserversorgung wachsen Zonen nicht über Stufe 2 hinaus! Baue Wassertürme oder ein Pumpwerk am Fluss und verlege Wasserleitungen zu den Zonen.',
+      'advmsg.watershort': 'Das Wassernetz ist überlastet! Wir brauchen mehr Wassertürme oder Pumpwerke, sonst sitzen Haushalte auf dem Trockenen.',
       // Wachstums-Diagnose
       'diag.title': 'Wachstums-Check',
       'diag.power': 'Strom', 'diag.road': 'Anbindung (Straße/Schiene)',
@@ -225,7 +227,7 @@
       'ui.sizeWarn': '⚠ Sehr große Karten brauchen einen schnellen Rechner.',
     },
     en: {
-      'b.road': 'Road', 'b.wire': 'Power line', 'b.rail': 'Rail',
+      'b.road': 'Road', 'b.wire': 'Power line', 'b.rail': 'Rail', 'b.pipe': 'Water pipe',
       'b.rzone': 'Residential zone', 'b.czone': 'Commercial zone', 'b.izone': 'Industrial zone',
       'b.park': 'Park', 'b.police': 'Police station', 'b.firedep': 'Fire station',
       'b.school': 'School', 'b.hospital': 'Hospital', 'b.wind': 'Wind turbine',
@@ -233,7 +235,7 @@
       'b.wtower': 'Water tower', 'b.pump': 'Pumping station', 'b.townhall': 'Town hall',
       'b.monument': 'Monument', 'b.casino': 'Casino',
       't.point': 'Info', 't.dozer': 'Demolish', 't.road': 'Road', 't.rail': 'Rail',
-      't.wire': 'Wire', 't.rz': 'Homes', 't.cz': 'Shops', 't.iz': 'Industry',
+      't.wire': 'Wire', 't.pipe': 'Pipe', 't.rz': 'Homes', 't.cz': 'Shops', 't.iz': 'Industry',
       't.wind': 'Wind', 't.coal': 'Coal', 't.wtower': 'W-Tower', 't.pump': 'Pump',
       't.park': 'Park', 't.police': 'Police', 't.firedep': 'Fire dept.', 't.school': 'School',
       't.hospital': 'Hospital', 't.stadium': 'Stadium', 't.townhall': 'Town hall',
@@ -264,11 +266,13 @@
       'ev.scenLost': '⌛ Scenario deadline passed — goal missed. Continuing in free mode.',
       'adv.finance': 'Treasurer Konrad', 'adv.power': 'Eng. Elke Watt', 'adv.env': 'Dr. Flora Green',
       'adv.fire': 'Fire Chief Falk', 'adv.water': 'Water Master Wilma',
+      'adv.watershort': 'Water Master Wilma',
       'advmsg.finance': 'The treasury is shrinking! Raise taxes or reconsider expensive buildings — a loan can help (📒 Budget).',
       'advmsg.power': 'The power grid is overloaded! We need more power plants or homes and businesses will fail.',
       'advmsg.env': 'The air in residential areas is bad! More parks, move industry away from homes — and avoid coal.',
       'advmsg.fire': 'Large parts of the city have no fire coverage! A fire could spread unchecked.',
-      'advmsg.water': 'Without water supply, zones will not grow beyond level 2! Build water towers or a pump by the river.',
+      'advmsg.water': 'Without water supply, zones will not grow beyond level 2! Build water towers or a pump by the river and lay water pipes to your zones.',
+      'advmsg.watershort': 'The water network is overloaded! We need more water towers or pumping stations, or households will run dry.',
       'diag.title': 'Growth check',
       'diag.power': 'Power', 'diag.road': 'Access (road/rail)',
       'diag.jobsConn': 'Connection to jobs', 'diag.custConn': 'Connection to residents',

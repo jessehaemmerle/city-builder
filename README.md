@@ -37,8 +37,9 @@ bring deine Stadt vom Dorf zur Metropole.
 3. **Zonen ziehen**: Wohnen (5), Gewerbe (6), Industrie (7) — per Drag als Rechteck.
 4. Zonen mit **Strom** und einer **Straße/Schiene im Umkreis von 3 Feldern**
    entwickeln sich über 4 Stufen — vom Häuschen zum Hochhaus.
-5. **Wasser**: Ab Stufe 2 brauchen Zonen Wasserversorgung — Wasserturm bauen
-   oder Pumpwerk ans Ufer setzen.
+5. **Wasser**: Ab Stufe 2 brauchen Zonen Wasserversorgung. Wasserturm bauen
+   (oder Pumpwerk ans Ufer setzen) und mit **Wasserleitungen** ans Netz aus
+   Straßen und Gebäuden anschließen — genau wie beim Strom.
 6. Mit **Polizei, Feuerwehr, Schule, Krankenhaus, Parks** Zufriedenheit und
    **Landwert** steigern — bei hohem Landwert entstehen Luxus-Hochhäuser.
 7. Meilensteine schalten **Rathaus, Stadion, Denkmal und Casino** frei.
@@ -61,10 +62,13 @@ bring deine Stadt vom Dorf zur Metropole.
 
 - **RCI-Nachfrage**: Wohnen, Gewerbe und Industrie beeinflussen sich gegenseitig
   (Jobs ⇄ Einwohner), angezeigt als Balken in der Statusleiste.
-- **Stromnetz**: Kraftwerke speisen ein Netz aus Straßen, Schienen, Leitungen und
-  Gebäuden. Zu wenig Erzeugung ⇒ Brownouts.
-- **Wassernetz**: Wasserturm (Radius 7) und Pumpwerk am Ufer (Radius 12) versorgen
-  Zonen — ohne Wasser ist bei Stufe 2 Schluss.
+- **Stromnetz**: Kraftwerke speisen ein Netz aus Straßen, Schienen, Stromleitungen
+  und Gebäuden. Zu wenig Erzeugung ⇒ Brownouts.
+- **Wassernetz**: Wassertürme und Pumpwerke (am Ufer) speisen ein eigenes Netz aus
+  **Wasserleitungen**, Straßen, Schienen und Gebäuden — mit eigener Kapazität. Reicht
+  das Angebot nicht (Anzeige `🚰 Bedarf/Angebot`), fallen Zonen trocken und wachsen
+  nicht über Stufe 2. Stromleitungen leiten kein Wasser; Wasserleitungen leiten
+  keinen Strom. Beide können als Unterwasser-„Brücke“ verlegt werden (×3 Kosten).
 - **Pendler-Wegfindung**: Wohnzonen pendeln über das echte Straßen-/Schienennetz
   zum nächsten Arbeitsplatz (Multi-Source-BFS). Der Pendlerfluss erzeugt den
   Verkehr auf genau den Straßen, die wirklich benutzt werden; Schienen schlucken
@@ -140,7 +144,7 @@ bring deine Stadt vom Dorf zur Metropole.
 ### Moderne Features im Retro-Gewand
 
 - Drag-Bau mit Live-Vorschau und Kostenanzeige, **Undo/Redo** (Strg+Z/Y)
-- 10 Daten-Overlays: Strom, Wasser, Verkehr, Landwert, Umwelt, Polizei,
+- 10 Daten-Overlays: Strom, Wasser (Netzansicht versorgt/trocken), Verkehr, Landwert, Umwelt, Polizei,
   Feuerwehr, Bildung, Gesundheit, Freizeit — Problemzonen zusätzlich
   **schraffiert** (farbenblind-tauglich)
 - **Statistik-Panel** mit Verlaufsgraphen (Einwohner, Kasse, Zufriedenheit)

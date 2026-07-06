@@ -71,6 +71,7 @@
     { id: 'road',     key: '3', mode: 'line', s: S_ROAD },
     { id: 'rail',     mode: 'line', s: S_RAIL },
     { id: 'wire',     key: '4', mode: 'line', s: S_WIRE },
+    { id: 'pipe',     mode: 'line', s: S_PIPE },
     { id: 'busstop',  mode: 'single', s: S_BUSSTOP },
     { id: 'trainstation', mode: 'single', s: S_TRAINSTATION },
     { id: 'subway',   mode: 'single', s: S_SUBWAY },
@@ -101,6 +102,7 @@
       case 'road': return Sprites.get('road', 10);
       case 'rail': return Sprites.get('rail', 10);
       case 'wire': return Sprites.get('wire', 10);
+      case 'pipe': return Sprites.get('pipe', 10);
       case 'rz': return Sprites.store.zoneR;
       case 'cz': return Sprites.store.zoneC;
       case 'iz': return Sprites.store.zoneI;
@@ -253,7 +255,8 @@
     const face = $('advisorFace');
     const fx = face.getContext('2d');
     fx.clearRect(0, 0, 16, 16);
-    const spr = Sprites.store.advisors[key];
+    // 'watershort' nutzt Wilmas Porträt (gleiche Beraterin, andere Botschaft)
+    const spr = Sprites.store.advisors[key === 'watershort' ? 'water' : key];
     if (spr) fx.drawImage(spr, 0, 0);
     $('advisorName').textContent = t('adv.' + key);
     $('advisorText').textContent = t('advmsg.' + key);
@@ -532,7 +535,7 @@
       pushUndo({ parts, money: spent });
       if (tl.id === 'dozer') Sound.sfx.dozer();
       else if (tl.id === 'road' || tl.id === 'rail') Sound.sfx.road();
-      else if (tl.id === 'wire') Sound.sfx.wire();
+      else if (tl.id === 'wire' || tl.id === 'pipe') Sound.sfx.wire();
       else if (tl.mode === 'rect') Sound.sfx.zone();
       else Sound.sfx.place();
       maybeTutorial(tl);
@@ -860,7 +863,7 @@
     let name = t('terr.' + sim.terr[i]), extra = '';
     if (s !== S_NONE) {
       name = t(DEFS[s].name);
-      if ((s === S_ROAD || s === S_RAIL || s === S_WIRE) && sim.terr[i] === T_WATER)
+      if ((s === S_ROAD || s === S_RAIL || s === S_WIRE || s === S_PIPE) && sim.terr[i] === T_WATER)
         name += ' (' + t('ui.bridge') + ')';
       if (s >= S_RZONE && s <= S_IZONE) {
         const lv = sim.lvl[i];
@@ -956,6 +959,9 @@
     const pw = $('uiPower');
     pw.textContent = '⚡ ' + sim.powerNeed + '/' + sim.powerSupply;
     pw.style.color = sim.powerNeed > sim.powerSupply ? '#ff6b6b' : '';
+    const wt = $('uiWater');
+    wt.textContent = '🚰 ' + sim.waterNeed + '/' + sim.waterSupply;
+    wt.style.color = sim.waterShort ? '#ff6b6b' : '';
     // Konjunktur-Anzeige
     const ec = sim.econ;
     const eco = $('uiEcon');
@@ -1360,6 +1366,16 @@
           if (y < sim.h - 1 && cond(i + sim.w)) m |= 4;
           if (x > 0 && cond(i - 1)) m |= 8;
           g.drawImage(S('wire', m), lx, ly);
+        } else if (s === S_PIPE) {
+          if (!inChunk) continue;
+          // Maske aus wasserleitenden Nachbarn (Rohr/Straße/Schiene/Gebäude)
+          const cond = (j) => { const q = sim.st[j]; return q === S_PIPE || q === S_ROAD || q === S_RAIL || sim.isBld(q); };
+          let m = 0;
+          if (y > 0 && cond(i - sim.w)) m |= 1;
+          if (x < sim.w - 1 && cond(i + 1)) m |= 2;
+          if (y < sim.h - 1 && cond(i + sim.w)) m |= 4;
+          if (x > 0 && cond(i - 1)) m |= 8;
+          g.drawImage(S('pipe', m), lx, ly);
         } else if (s === S_RUBBLE) {
           if (!inChunk) continue;
           g.drawImage(S('rubble'), lx, ly);
@@ -1561,8 +1577,12 @@
               col = v > 55 ? 'rgba(240,217,92,' + ((v - 55) / 45 * 0.55 + 0.08) + ')'
                 : 'rgba(90,110,220,' + ((55 - v) / 55 * 0.4 + 0.05) + ')';
           } else if (overlay === 'water') {
-            if (sim.covWater[i] > 0 && sim.terr[i] !== T_WATER)
-              col = 'rgba(60,170,255,' + (sim.covWater[i] / 100 * 0.5) + ')';
+            // Netzansicht wie beim Strom: leitende Kacheln versorgt/trocken
+            const s = sim.st[i];
+            if (s === S_PIPE || s === S_ROAD || s === S_RAIL || sim.isBld(s)) {
+              if (sim.watered[i]) col = 'rgba(60,170,255,0.40)';
+              else { col = 'rgba(255,60,60,0.50)'; hatch = true; }
+            }
           } else {
             const m = { police: sim.covPolice, fire: sim.covFire, school: sim.covSchool, health: sim.covHealth, park: sim.covPark }[overlay];
             if (m && m[i] > 0) col = 'rgba(60,180,255,' + (m[i] / 100 * 0.5) + ')';
@@ -1660,6 +1680,7 @@
     if (s === S_ROAD) col = '#8a8a95';
     else if (s === S_RAIL) col = '#6b6a5a';
     else if (s === S_WIRE) col = '#6b5636';
+    else if (s === S_PIPE) col = '#2f7fa8';
     else if (s === S_RZONE) col = sim.lvl[i] ? '#6fe06f' : '#3f9f4f';
     else if (s === S_CZONE) col = sim.lvl[i] ? '#6fb8ff' : '#3f6fbf';
     else if (s === S_IZONE) col = sim.lvl[i] ? '#f0d95c' : '#af9f3c';

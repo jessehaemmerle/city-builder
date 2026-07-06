@@ -95,6 +95,14 @@
       sub:   { board: 3, segDiv: 6, lineUpkeep: 60, stopUpkeep: 6 },
     },
 
+    // Wassernetz: Türme/Pumpwerke speisen Rohre, Straßen und Gebäude
+    // (analog zum Stromnetz, mit eigener Kapazität)
+    WATER: {
+      TOWER_SUPPLY: 100,     // Einheiten je Wasserturm
+      PUMP_SUPPLY: 250,      // Einheiten je Pumpwerk (am Wasser)
+      SHORT_HAPPY: 6,        // Zufriedenheits-Malus bei Wassermangel
+    },
+
     // Wirtschaft: Konjunktur + Außenhandel über Randverbindungen & Häfen
     ECONOMY: {
       CYCLE_MONTHS: 48,        // Länge eines Konjunkturzyklus

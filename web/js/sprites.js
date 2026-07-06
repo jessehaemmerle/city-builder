@@ -194,6 +194,38 @@ const Sprites = (() => {
     return c;
   }
 
+  // ---------- Wasserleitung: Autotile (dickes Teal-Rohr mit Flanschen) ----------
+  function pipeTile(mask) {
+    const c = cv(TILE, TILE), x = c.getContext('2d');
+    let N = mask & 1, E = mask & 2, S = mask & 4, W = mask & 8;
+    if (!N && !E && !S && !W) { E = 2; W = 8; } // Stummel
+    const dark = '#1c5070', mid = '#2f7fa8', hl = '#8fd4ee';
+    const seg = (px, py, pw, ph, horiz) => {
+      x.fillStyle = dark; x.fillRect(px, py, pw, ph);
+      x.fillStyle = mid;
+      if (horiz) x.fillRect(px, py + 1, pw, ph - 2);
+      else x.fillRect(px + 1, py, pw - 2, ph);
+      x.fillStyle = hl;
+      if (horiz) x.fillRect(px, py + 1, pw, 1);
+      else x.fillRect(px + 1, py, 1, ph);
+    };
+    if (N) seg(6, 0, 4, 9, false);
+    if (S) seg(6, 7, 4, 9, false);
+    if (W) seg(0, 6, 9, 4, true);
+    if (E) seg(7, 6, 9, 4, true);
+    // Verbindungsstück mit Flansch
+    x.fillStyle = dark; x.fillRect(5, 5, 6, 6);
+    x.fillStyle = mid; x.fillRect(6, 6, 4, 4);
+    x.fillStyle = hl; x.fillRect(6, 6, 1, 1);
+    // Flansch-Nieten an den Enden
+    x.fillStyle = hl;
+    if (N) { x.fillRect(6, 1, 1, 1); x.fillRect(9, 1, 1, 1); }
+    if (S) { x.fillRect(6, 14, 1, 1); x.fillRect(9, 14, 1, 1); }
+    if (W) { x.fillRect(1, 6, 1, 1); x.fillRect(1, 9, 1, 1); }
+    if (E) { x.fillRect(14, 6, 1, 1); x.fillRect(14, 9, 1, 1); }
+    return c;
+  }
+
   // ---------- Zonen-Markierung (Level 0) ----------
   const LETTER = {
     R: ['XX.', 'X.X', 'XX.', 'X.X', 'X.X'],
@@ -1193,12 +1225,13 @@ const Sprites = (() => {
     store.sand = [sandTile(11), sandTile(12)];
     store.tree = TREE;
     store.rubble = rubbleTile();
-    store.road = []; store.wire = []; store.rail = [];
+    store.road = []; store.wire = []; store.rail = []; store.pipe = [];
     store.bridgeRoad = []; store.bridgeRail = [];
     for (let m = 0; m < 16; m++) {
       store.road[m] = roadTile(m);
       store.wire[m] = wireTile(m);
       store.rail[m] = railTile(m);
+      store.pipe[m] = pipeTile(m);
       store.bridgeRoad[m] = bridgeTile(m, 'road');
       store.bridgeRail[m] = bridgeTile(m, 'rail');
     }

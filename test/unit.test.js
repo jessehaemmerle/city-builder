@@ -7,7 +7,7 @@
 const M = require('./load-sim.js');
 const { Sim, rleEncode, rleDecode } = M;
 const { S_ROAD, S_RAIL, S_WIRE, S_RZONE, S_CZONE, S_IZONE, S_COAL, S_WIND, S_WTOWER, S_PUMP, S_SOLAR,
-  S_BUSSTOP, S_SUBWAY, S_PORT, S_NONE, T_WATER } = M;
+  S_BUSSTOP, S_SUBWAY, S_PORT, S_PIPE, S_NONE, T_WATER } = M;
 
 let pass = 0, fail = 0;
 function check(name, cond) {
@@ -397,6 +397,61 @@ section('Riesenkarten (Performance-Smoke)');
   check('256er-Karte: Windräder stehen', w1.ok || w2.ok);
   for (let t = 0; t < 360; t++) { mid.tick(); mid.events.length = 0; }
   check('256er-Karte: Stadt wächst (' + mid.pop + ')', mid.pop > 0);
+}
+
+section('Wassernetz (Leitungen, Kapazität, Save/Load)');
+{
+  const s = new Sim(64, 64, 5150);
+  s.money = 200000;
+  const c = 32;
+  for (let y = c - 3; y <= c + 3; y++) for (let x = 8; x <= 56; x++) s.terr[s.idx(x, y)] = 0;
+  for (let x = 10; x <= 30; x++) s.place(S_ROAD, x, c);
+  s.place(S_WIND, 10, c - 1);                       // Strom für Turm & Zonen
+  s.place(S_COAL, 9, c + 1);                        // genug Strom auch für viele Stufe-4-Zonen
+  s.place(S_RZONE, 12, c - 1); s.lvl[s.idx(12, c - 1)] = 2;
+  // Turm abseits der Straße, nur per STROMKABEL verbunden
+  s.place(S_WIRE, 20, c - 1); s.place(S_WIRE, 20, c - 2);
+  s.place(S_WTOWER, 20, c - 3);
+  s.computePower(); s.computeWater();
+  const rz = s.idx(12, c - 1);
+  check('Turm hat Strom (über Kabel)', s.powered[s.idx(20, c - 3)] === 1);
+  check('Turm speist ein (Supply=' + s.waterSupply + ')', s.waterSupply === BAL.WATER.TOWER_SUPPLY);
+  check('Stromkabel leitet KEIN Wasser: Zone trocken', s.watered[rz] === 0 && s.covWater[rz] === 0);
+  // Wasserleitung vom Turm zur Straße → Netz versorgt
+  s.place(S_PIPE, 21, c - 3); s.place(S_PIPE, 21, c - 2); s.place(S_PIPE, 21, c - 1);
+  s.computePower(); s.computeWater();
+  check('Rohre verbinden Turm mit Straßennetz: Zone versorgt', s.watered[rz] === 1 && s.covWater[rz] === 100);
+  check('Kein Wassermangel bei 1 Zone', s.waterShort === false);
+  // Kapazität: viele Stufe-4-Zonen überlasten den einen Turm
+  for (let x = 13; x <= 30; x++) { s.place(S_RZONE, x, c - 1); s.lvl[s.idx(x, c - 1)] = 4; }
+  for (let x = 11; x <= 30; x++) { s.place(S_RZONE, x, c + 1); s.lvl[s.idx(x, c + 1)] = 4; }
+  s.computePower(); s.computeWater();
+  check('Bedarf übersteigt Angebot (' + s.waterNeed + '/' + s.waterSupply + ')',
+    s.waterNeed > s.waterSupply && s.waterShort === true);
+  let dryZones = 0, zoneCnt = 0;
+  for (let i = 0; i < 64 * 64; i++) if (s.st[i] === S_RZONE) { zoneCnt++; if (!s.watered[i]) dryZones++; }
+  check('Wassermangel lässt Zonen trockenfallen (' + dryZones + '/' + zoneCnt + ')', dryZones > 0);
+  // Zufriedenheits-Malus bei Wassermangel
+  s.computeStats();
+  const hShort = s.happiness;
+  s.place(S_WTOWER, 31, c - 1); // zweiter Turm am Ende der Zonenreihe
+  s.computePower(); s.computeWater(); s.computeStats();
+  check('Zweiter Turm behebt den Mangel', s.waterShort === false);
+  check('Zufriedenheit steigt ohne Wassermangel (' + hShort + ' → ' + s.happiness + ')',
+    s.happiness > hShort);
+  // Rohr als "Brücke" (Unterwasserleitung) kostet das Dreifache
+  let waterSpot = -1;
+  for (let i = 0; i < 64 * 64; i++) if (s.terr[i] === T_WATER) { waterSpot = i; break; }
+  if (waterSpot >= 0) {
+    check('Unterwasser-Rohr kostet ' + BAL.MONEY.BRIDGE_FACTOR + '×',
+      s.costAt(S_PIPE, waterSpot % 64, (waterSpot / 64) | 0) === M.DEFS[S_PIPE].cost * BAL.MONEY.BRIDGE_FACTOR);
+  }
+  // Save/Load: Wasserzustand bitgenau
+  const s2 = Sim.load(s.serialize());
+  let same = s2.waterShort === s.waterShort && s2.waterNeed === s.waterNeed && s2.waterSupply === s.waterSupply;
+  for (let i = 0; i < 64 * 64 && same; i++)
+    if (s2.watered[i] !== s.watered[i] || s2.covWater[i] !== s.covWater[i]) same = false;
+  check('Wassernetz überlebt Save/Load bitgenau', same);
 }
 
 section('Stadtname & Cheat-Flag im Spielstand');

@@ -105,7 +105,7 @@ function check(name, cond) {
   });
   check('Straßen + Schienen + Wasserturm gebaut', built.road > 10 && built.rail > 5 && built.wtower === 1);
 
-  // Undo/Redo
+  // Undo/Redo (Schiene war die letzte Bauaktion)
   await page.keyboard.press('Control+z');
   await page.waitForTimeout(200);
   const railGone = await page.evaluate(() => {
@@ -116,6 +116,21 @@ function check(name, cond) {
   check('Undo entfernt Schienen', railGone);
   await page.keyboard.press('Control+y');
   await page.waitForTimeout(200);
+
+  // Wasserleitung: vom Turm (cx-60, cy-96) nach rechts ins freie Feld
+  await page.click('#tool_pipe');
+  await page.mouse.move(cx - 44, cy - 96); await page.mouse.down();
+  await page.mouse.move(cx + 160, cy - 96, { steps: 10 }); await page.mouse.up();
+  await page.waitForTimeout(200);
+  const water = await page.evaluate(() => {
+    const s = window.RETRO.sim;
+    let pipes = 0, wet = 0;
+    for (let i = 0; i < s.w * s.h; i++) { if (s.st[i] === 26) pipes++; if (s.watered[i]) wet++; }
+    return { pipes, wet, supply: s.waterSupply, hud: document.getElementById('uiWater').textContent };
+  });
+  check('Wasserleitung gebaut (' + water.pipes + ')', water.pipes > 3);
+  check('Wassernetz versorgt Felder (' + water.wet + ')', water.wet > 0 && water.supply > 0);
+  check('Wasser-HUD zeigt Werte (' + water.hud + ')', /\d+\/\d+/.test(water.hud));
 
   // Simulation laufen lassen
   await page.click('#spd3');

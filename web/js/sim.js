@@ -15,9 +15,9 @@ const S_NONE = 0, S_ROAD = 1, S_WIRE = 2, S_RZONE = 3, S_CZONE = 4, S_IZONE = 5,
   S_PARK = 6, S_POLICE = 7, S_FIREDEP = 8, S_SCHOOL = 9, S_HOSPITAL = 10,
   S_WIND = 11, S_COAL = 12, S_STADIUM = 13, S_RUBBLE = 14,
   S_RAIL = 15, S_WTOWER = 16, S_PUMP = 17, S_TOWNHALL = 18, S_MONUMENT = 19, S_CASINO = 20,
-  S_SOLAR = 21, S_BUSSTOP = 22, S_TRAINSTATION = 23, S_SUBWAY = 24, S_PORT = 25;
+  S_SOLAR = 21, S_BUSSTOP = 22, S_TRAINSTATION = 23, S_SUBWAY = 24, S_PORT = 25, S_PIPE = 26;
 
-// Katalog. name = i18n-Key. Flags: bld, flam, drain, power, waterRange, needsWaterAdj
+// Katalog. name = i18n-Key. Flags: bld, flam, drain, power, waterSupply, needsWaterAdj
 const DEFS = {
   [S_ROAD]:     { name: 'b.road',     cost: 10,   upkeep: 0.2,  size: 1 },
   [S_WIRE]:     { name: 'b.wire',     cost: 5,    upkeep: 0.1,  size: 1 },
@@ -34,8 +34,8 @@ const DEFS = {
   [S_COAL]:     { name: 'b.coal',     cost: 3000, upkeep: 100,  size: 2, bld: 1, power: 180 },
   [S_STADIUM]:  { name: 'b.stadium',  cost: 3000, upkeep: 60,   size: 2, bld: 1, drain: 5, minPop: 1500 },
   [S_RUBBLE]:   { name: 'b.rubble',   cost: 0,    upkeep: 0,    size: 1 },
-  [S_WTOWER]:   { name: 'b.wtower',   cost: 400,  upkeep: 10,   size: 1, bld: 1, drain: 1, waterRange: 7 },
-  [S_PUMP]:     { name: 'b.pump',     cost: 700,  upkeep: 18,   size: 1, bld: 1, drain: 2, waterRange: 12, needsWaterAdj: 1 },
+  [S_WTOWER]:   { name: 'b.wtower',   cost: 400,  upkeep: 10,   size: 1, bld: 1, drain: 1 },
+  [S_PUMP]:     { name: 'b.pump',     cost: 700,  upkeep: 18,   size: 1, bld: 1, drain: 2, needsWaterAdj: 1 },
   [S_TOWNHALL]: { name: 'b.townhall', cost: 1500, upkeep: 20,   size: 1, bld: 1, flam: 1, drain: 3, minPop: 500 },
   [S_MONUMENT]: { name: 'b.monument', cost: 1000, upkeep: 5,    size: 1, bld: 1, minPop: 2500 },
   [S_CASINO]:   { name: 'b.casino',   cost: 2000, upkeep: 0,    size: 1, bld: 1, flam: 1, drain: 4, minPop: 4000, income: 150 },
@@ -44,6 +44,7 @@ const DEFS = {
   [S_TRAINSTATION]: { name: 'b.trainstation', cost: 800,  upkeep: 0, size: 1, bld: 1, drain: 1 },
   [S_SUBWAY]:       { name: 'b.subway',       cost: 1200, upkeep: 0, size: 1, bld: 1, drain: 2, minPop: 1000 },
   [S_PORT]:         { name: 'b.port',         cost: 2500, upkeep: 40, size: 2, bld: 1, drain: 3, minPop: 500, needsWaterAdj: 1 },
+  [S_PIPE]:         { name: 'b.pipe',         cost: 4,    upkeep: 0.05, size: 1 },
 };
 
 const LINE_COLORS = ['#e5484f', '#4f8fdc', '#41c46a', '#f0d95c', '#b06ce0', '#e08438', '#33c3c1', '#e39ac2'];
@@ -104,6 +105,8 @@ class Sim {
     this.covHealth = new Uint8Array(n);
     this.covPark = new Uint8Array(n);
     this.covWater = new Uint8Array(n);
+    this.watered = new Uint8Array(n);  // Wassernetz-Anschluss (analog powered)
+    this.waterSupply = 0; this.waterNeed = 0; this.waterShort = false;
     this.burn = new Uint8Array(n);
     this.floodT = new Uint8Array(n);
     this.waterNear = new Uint8Array(n);
@@ -237,7 +240,7 @@ class Sim {
     const def = DEFS[tool];
     if (!def) return 0;
     let c = def.cost;
-    if ((tool === S_ROAD || tool === S_RAIL || tool === S_WIRE) &&
+    if ((tool === S_ROAD || tool === S_RAIL || tool === S_WIRE || tool === S_PIPE) &&
       this.inMap(x, y) && this.terr[this.idx(x, y)] === T_WATER) c *= BAL.MONEY.BRIDGE_FACTOR;
     return c;
   }
@@ -250,7 +253,7 @@ class Sim {
     if (def.minYear && this.year < def.minYear) return { ok: false, reason: 'err.minYear', params: { y: def.minYear } };
     if (tool === S_COAL && this.scenario && this.scenario.noCoal)
       return { ok: false, reason: 'err.noCoal' };
-    const overWater = tool === S_ROAD || tool === S_RAIL || tool === S_WIRE;
+    const overWater = tool === S_ROAD || tool === S_RAIL || tool === S_WIRE || tool === S_PIPE;
     for (let dy = 0; dy < size; dy++) for (let dx = 0; dx < size; dx++) {
       const px = x + dx, py = y + dy;
       if (!this.inMap(px, py)) return { ok: false, reason: 'err.outside' };
@@ -496,6 +499,63 @@ class Sim {
       }
     }
     this.dirtyPower = false;
+  }
+
+  // ---------- Wassernetz ----------
+  // Analog zum Stromnetz: Wassertürme/Pumpwerke (mit Strom!) speisen das
+  // Netz, Rohre/Straßen/Schienen/Gebäude leiten Wasser weiter. Stromkabel
+  // leiten KEIN Wasser — dafür gibt es die Wasserleitung (S_PIPE).
+  computeWater() {
+    const { w, h } = this;
+    const WB = BAL.WATER;
+    this.watered.fill(0);
+    let supply = 0, need = 0;
+    const queue = this._q;
+    let tail = 0;
+    for (let i = 0; i < w * h; i++) {
+      const s = this.st[i];
+      const isSource = (s === S_WTOWER || s === S_PUMP) && this.powered[i];
+      if (isSource && this.isAnchor(i))
+        supply += s === S_PUMP ? WB.PUMP_SUPPLY : WB.TOWER_SUPPLY;
+      if (isSource) { queue[tail++] = i; this.watered[i] = 1; }
+      if (s >= S_RZONE && s <= S_IZONE && this.lvl[i] > 0) need += Math.ceil((1 + this.lvl[i]) / 2);
+    }
+    this.waterSupply = supply; this.waterNeed = need;
+    const conducts = (i) => {
+      const s = this.st[i];
+      return s === S_PIPE || s === S_ROAD || s === S_RAIL || this.isBld(s);
+    };
+    let head = 0;
+    while (head < tail) {
+      const i = queue[head++];
+      const x = i % w, y = (i / w) | 0;
+      const nb = [[x, y - 1], [x + 1, y], [x, y + 1], [x - 1, y]];
+      for (const [nx, ny] of nb) {
+        if (!this.inMap(nx, ny)) continue;
+        const j = this.idx(nx, ny);
+        if (!this.watered[j] && conducts(j)) { this.watered[j] = 1; queue[tail++] = j; }
+      }
+    }
+    const isSrc = (i) => {
+      const s = this.st[i];
+      return s === S_WTOWER || s === S_PUMP;
+    };
+    this.waterShort = need > supply;
+    if (this.waterShort && supply > 0) {
+      const ratio = supply / need;
+      const rr = mulberry(this.seed + 7 + this.day + this.month * 31);
+      for (let i = 0; i < w * h; i++) {
+        if (this.watered[i] && !isSrc(i) && rr() > ratio) this.watered[i] = 0;
+      }
+    } else if (supply === 0) {
+      for (let i = 0; i < w * h; i++) {
+        if (!isSrc(i)) this.watered[i] = 0;
+      }
+    }
+    // covWater bleibt als abgeleitetes 0/100-Feld erhalten, damit alle
+    // bestehenden Verbraucher (Wachstum, Zufriedenheit, Berater, Infofeld)
+    // unverändert funktionieren.
+    for (let i = 0; i < w * h; i++) this.covWater[i] = this.watered[i] ? 100 : 0;
   }
 
   // ---------- Anbindung: nächstes Verkehrsfeld im Umkreis 3 ----------
@@ -774,7 +834,7 @@ class Sim {
 
   computeCoverage() {
     this.covPolice.fill(0); this.covFire.fill(0); this.covSchool.fill(0);
-    this.covHealth.fill(0); this.covPark.fill(0); this.covWater.fill(0);
+    this.covHealth.fill(0); this.covPark.fill(0);
     const { w, h } = this;
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
       const i = this.idx(x, y);
@@ -788,8 +848,6 @@ class Sim {
         case S_STADIUM:  if (this.powered[i]) this.spread(this.covPark, x, y, 12); break;
         case S_TOWNHALL: if (this.powered[i]) this.spread(this.covPark, x, y, 8); break;
         case S_MONUMENT: this.spread(this.covPark, x, y, 10); break;
-        case S_WTOWER:   if (this.powered[i]) this.spread(this.covWater, x, y, DEFS[S_WTOWER].waterRange); break;
-        case S_PUMP:     if (this.powered[i]) this.spread(this.covWater, x, y, DEFS[S_PUMP].waterRange); break;
       }
     }
     this.dirtyCov = false;
@@ -898,6 +956,7 @@ class Sim {
       const unemployment = Math.max(0, (workers - this.jobs) / Math.max(1, workers));
       happy -= unemployment * B.UNEMPLOYED_F;
       if (this.brownout) happy -= B.BROWNOUT;
+      if (this.waterShort) happy -= BAL.WATER.SHORT_HAPPY;
     }
     this.happiness = Math.max(0, Math.min(100, Math.round(happy)));
   }
@@ -1109,6 +1168,7 @@ class Sim {
     };
     if (this.lastBudget && this.lastBudget.net < 0 && this.money < 3000) say('finance');
     if (this.brownout) say('power');
+    if (this.waterShort && this.pop > 150) say('watershort');
     if (this.avgPollR > 32) say('env');
     if (this.pop > 250 && this.avgFireCovR !== undefined && this.avgFireCovR < 22) say('fire');
     if (this.pop > 150) {
@@ -1224,7 +1284,7 @@ class Sim {
       if (this.month > 11) { this.month = 0; this.year++; }
       this.monthlyBudget();
     }
-    if (this.dirtyPower || this.day % 5 === 0) this.computePower();
+    if (this.dirtyPower || this.day % 5 === 0) { this.computePower(); this.computeWater(); }
     if (this.dirtyCov) this.computeCoverage();
     if (this.dirtyAccess) this.computeRoadAccess(); // nur bei Strukturänderung
     if (this.dirtyCommute || this.day % 7 === 5) this.computeCommute();
@@ -1262,10 +1322,12 @@ class Sim {
         terr: rleEncode(this.terr), st: rleEncode(this.st), lvl: rleEncode(this.lvl),
         burn: rleEncode(this.burn), flood: rleEncode(this.floodT),
         pow: rleEncode(this.powered), // sonst ändert der Brownout-Zufall beim Laden die Zufriedenheit
+        wat: rleEncode(this.watered), // dito für das Wassernetz (Mangel-Sampling)
         poll: rleEncode(this.poll),   // sonst verschiebt frischer Verkehr die Umweltwerte
       },
       anchors2,
       brownout: !!this.brownout, powerNeed: this.powerNeed, powerSupply: this.powerSupply,
+      waterShort: !!this.waterShort, waterNeed: this.waterNeed, waterSupply: this.waterSupply,
       money: this.money, debt: this.debt, taxRate: this.taxRate,
       day: this.day, month: this.month, year: this.year, startYear: this.startYear,
       cityName: this.cityName, cheated: this.cheated,
@@ -1330,6 +1392,15 @@ class Sim {
     } else {
       s.computePower();
     }
+    if (d.v >= 4 && d.rle.wat) {
+      rleDecode(d.rle.wat, s.watered);
+      s.waterShort = !!d.waterShort;
+      s.waterNeed = d.waterNeed || 0;
+      s.waterSupply = d.waterSupply || 0;
+      for (let i = 0; i < s.w * s.h; i++) s.covWater[i] = s.watered[i] ? 100 : 0;
+    } else {
+      s.computeWater();
+    }
     s.dirtyCov = true; s.dirtyCommute = true;
     s.computeCoverage(); s.computeRoadAccess();
     s.computeCommute();
@@ -1348,6 +1419,6 @@ if (typeof module !== 'undefined' && module.exports) {
     S_NONE, S_ROAD, S_WIRE, S_RZONE, S_CZONE, S_IZONE, S_PARK, S_POLICE,
     S_FIREDEP, S_SCHOOL, S_HOSPITAL, S_WIND, S_COAL, S_STADIUM, S_RUBBLE,
     S_RAIL, S_WTOWER, S_PUMP, S_TOWNHALL, S_MONUMENT, S_CASINO, S_SOLAR,
-    S_BUSSTOP, S_TRAINSTATION, S_SUBWAY, S_PORT,
+    S_BUSSTOP, S_TRAINSTATION, S_SUBWAY, S_PORT, S_PIPE,
   };
 }
