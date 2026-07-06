@@ -15,7 +15,8 @@ const S_NONE = 0, S_ROAD = 1, S_WIRE = 2, S_RZONE = 3, S_CZONE = 4, S_IZONE = 5,
   S_PARK = 6, S_POLICE = 7, S_FIREDEP = 8, S_SCHOOL = 9, S_HOSPITAL = 10,
   S_WIND = 11, S_COAL = 12, S_STADIUM = 13, S_RUBBLE = 14,
   S_RAIL = 15, S_WTOWER = 16, S_PUMP = 17, S_TOWNHALL = 18, S_MONUMENT = 19, S_CASINO = 20,
-  S_SOLAR = 21, S_BUSSTOP = 22, S_TRAINSTATION = 23, S_SUBWAY = 24, S_PORT = 25, S_PIPE = 26;
+  S_SOLAR = 21, S_BUSSTOP = 22, S_TRAINSTATION = 23, S_SUBWAY = 24, S_PORT = 25, S_PIPE = 26,
+  S_HOTEL = 27, S_AMUSE = 28;
 
 // Katalog. name = i18n-Key. Flags: bld, flam, drain, power, waterSupply, needsWaterAdj
 const DEFS = {
@@ -45,6 +46,9 @@ const DEFS = {
   [S_SUBWAY]:       { name: 'b.subway',       cost: 1200, upkeep: 0, size: 1, bld: 1, drain: 2, minPop: 1000 },
   [S_PORT]:         { name: 'b.port',         cost: 2500, upkeep: 40, size: 2, bld: 1, drain: 3, minPop: 500, needsWaterAdj: 1 },
   [S_PIPE]:         { name: 'b.pipe',         cost: 4,    upkeep: 0.05, size: 1 },
+  // Tourismus-Gebäude: Hotel = Bettenkapazität, Freizeitpark = Attraktion
+  [S_HOTEL]:        { name: 'b.hotel',        cost: 700,  upkeep: 12, size: 1, bld: 1, flam: 1, drain: 3, minPop: 200 },
+  [S_AMUSE]:        { name: 'b.amuse',        cost: 2500, upkeep: 45, size: 2, bld: 1, flam: 1, drain: 5, minPop: 500 },
 };
 
 const LINE_COLORS = ['#e5484f', '#4f8fdc', '#41c46a', '#f0d95c', '#b06ce0', '#e08438', '#33c3c1', '#e39ac2'];
@@ -158,6 +162,8 @@ class Sim {
     this.compExt = [];        // Außenanbindung je Netz-Komponente
     this.exportBase = 0;
     this.extRoadTotal = 0; this.extRailTotal = 0; this.portTotal = 0;
+    // Tourismus (abgeleitet in computeStats)
+    this.attraction = 0; this.touristCap = 0; this.touristDemand = 0; this.tourists = 0;
 
     this.genTerrain();
   }
@@ -846,6 +852,7 @@ class Sim {
         case S_HOSPITAL: if (this.powered[i]) this.spread(this.covHealth, x, y, 10); break;
         case S_PARK:     this.spread(this.covPark, x, y, 5); break;
         case S_STADIUM:  if (this.powered[i]) this.spread(this.covPark, x, y, 12); break;
+        case S_AMUSE:    if (this.powered[i]) this.spread(this.covPark, x, y, 11); break;
         case S_TOWNHALL: if (this.powered[i]) this.spread(this.covPark, x, y, 8); break;
         case S_MONUMENT: this.spread(this.covPark, x, y, 10); break;
       }
@@ -908,19 +915,27 @@ class Sim {
 
   // ---------- Statistik ----------
   computeStats() {
-    const B = BAL.HAPPY, D = BAL.DEMAND;
+    const B = BAL.HAPPY, D = BAL.DEMAND, AT = BAL.TOURISM.ATTRACT;
     let pop = 0, cJobs = 0, iJobs = 0, casinos = 0, townhall = false;
+    let hotelBeds = 0, attraction = 0;
     const n = this.w * this.h;
     for (let i = 0; i < n; i++) {
-      if (this.st[i] === S_RZONE) pop += BAL.R_POP[this.lvl[i]];
-      else if (this.st[i] === S_CZONE) cJobs += BAL.C_JOBS[this.lvl[i]];
-      else if (this.st[i] === S_IZONE) iJobs += BAL.I_JOBS[this.lvl[i]];
-      else if (this.st[i] === S_CASINO && this.powered[i]) casinos++;
-      else if (this.st[i] === S_TOWNHALL && this.powered[i]) townhall = true;
+      const s = this.st[i];
+      if (s === S_RZONE) pop += BAL.R_POP[this.lvl[i]];
+      else if (s === S_CZONE) cJobs += BAL.C_JOBS[this.lvl[i]];
+      else if (s === S_IZONE) iJobs += BAL.I_JOBS[this.lvl[i]];
+      else if (s === S_CASINO && this.powered[i]) { casinos++; attraction += AT.casino; }
+      else if (s === S_TOWNHALL && this.powered[i]) townhall = true;
+      else if (s === S_HOTEL && this.powered[i]) hotelBeds += BAL.TOURISM.HOTEL_BEDS;
+      else if (s === S_PARK) attraction += AT.park;
+      else if (s === S_MONUMENT) attraction += AT.monument;
+      else if (s === S_STADIUM && this.powered[i] && this.isAnchor(i)) attraction += AT.stadium;
+      else if (s === S_AMUSE && this.powered[i] && this.isAnchor(i)) attraction += AT.amuse;
     }
     this.pop = pop; this.cJobs = cJobs; this.iJobs = iJobs;
     this.jobs = cJobs + iJobs;
     this.casinos = casinos;
+    this.attraction = attraction; this.touristCap = hotelBeds;
 
     const workers = pop * D.WORKER_SHARE;
     const taxF = Math.max(D.TAX_F_MIN, D.TAX_F_MAX - this.taxRate / D.TAX_F_DIV);
@@ -959,6 +974,17 @@ class Sim {
       if (this.waterShort) happy -= BAL.WATER.SHORT_HAPPY;
     }
     this.happiness = Math.max(0, Math.min(100, Math.round(happy)));
+
+    // ---------- Tourismus ----------
+    // Nachfrage = Attraktionen × Zufriedenheit × Konjunktur × Außenanbindung.
+    // Tatsächliche Touristen sind durch die Hotelbetten begrenzt (Kapazität).
+    const TB = BAL.TOURISM;
+    const extConnected = (this.extRoadTotal + this.extRailTotal + this.portTotal) > 0;
+    const happyF = Math.max(0, (this.happiness - TB.HAPPY_MIN) / TB.HAPPY_DIV);
+    const econF = 1 + this.econ * TB.ECON_F;
+    const extF = extConnected ? TB.EXT_FULL : TB.EXT_LOCAL;
+    this.touristDemand = Math.max(0, Math.round(this.attraction * happyF * econF * extF));
+    this.tourists = Math.min(this.touristDemand, this.touristCap);
   }
 
   // ---------- Wachstum ----------
@@ -1169,6 +1195,9 @@ class Sim {
     if (this.lastBudget && this.lastBudget.net < 0 && this.money < 3000) say('finance');
     if (this.brownout) say('power');
     if (this.waterShort && this.pop > 150) say('watershort');
+    // Attraktionen vorhanden, aber keine Hotelbetten → Tourismus verschenkt
+    if (this.attraction >= 60 && this.touristCap === 0 &&
+      (this.extRoadTotal + this.extRailTotal + this.portTotal) > 0) say('tourism');
     if (this.avgPollR > 32) say('env');
     if (this.pop > 250 && this.avgFireCovR !== undefined && this.avgFireCovR < 22) say('fire');
     if (this.pop > 150) {
@@ -1219,9 +1248,10 @@ class Sim {
     // Außenhandel: Exporterlöse hängen an Kapazität UND Konjunktur
     const ec = this.econ;
     const exportIncome = Math.round((this.exportBase || 0) * (1 + ec * 0.5));
-    const net = income + casinoIncome + fares + exportIncome - upkeep - interest - transit;
+    const tourismIncome = Math.round((this.tourists || 0) * BAL.TOURISM.SPEND);
+    const net = income + casinoIncome + fares + exportIncome + tourismIncome - upkeep - interest - transit;
     this.money += net;
-    this.lastBudget = { income, casino: casinoIncome, fares, export: exportIncome, upkeep, interest, transit, net };
+    this.lastBudget = { income, casino: casinoIncome, fares, export: exportIncome, tourism: tourismIncome, upkeep, interest, transit, net };
     // Konjunktur-Phasenwechsel melden (deterministisch aus dem Monat)
     const E2 = BAL.ECONOMY;
     const prevEc = this.econAt(this.monthsTotal - 1);
@@ -1419,6 +1449,6 @@ if (typeof module !== 'undefined' && module.exports) {
     S_NONE, S_ROAD, S_WIRE, S_RZONE, S_CZONE, S_IZONE, S_PARK, S_POLICE,
     S_FIREDEP, S_SCHOOL, S_HOSPITAL, S_WIND, S_COAL, S_STADIUM, S_RUBBLE,
     S_RAIL, S_WTOWER, S_PUMP, S_TOWNHALL, S_MONUMENT, S_CASINO, S_SOLAR,
-    S_BUSSTOP, S_TRAINSTATION, S_SUBWAY, S_PORT, S_PIPE,
+    S_BUSSTOP, S_TRAINSTATION, S_SUBWAY, S_PORT, S_PIPE, S_HOTEL, S_AMUSE,
   };
 }

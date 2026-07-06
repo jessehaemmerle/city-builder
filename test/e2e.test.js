@@ -132,6 +132,37 @@ function check(name, cond) {
   check('Wassernetz versorgt Felder (' + water.wet + ')', water.wet > 0 && water.supply > 0);
   check('Wasser-HUD zeigt Werte (' + water.hud + ')', /\d+\/\d+/.test(water.hud));
 
+  // Tourismus-Gebäude: Hotel (1x1) + Freizeitpark (2x2) — neue Sprites baken.
+  // Werkzeuge/Icons sind bereits über die Toolbar validiert; hier setzen wir die
+  // Gebäude deterministisch auf freie Felder, damit der Chunk-Renderer sie zeichnet.
+  await page.click('#spd0');
+  const tour = await page.evaluate(() => {
+    const s = window.RETRO.sim;
+    s.pop = 600; // Bau-Freigabe (minPop des Freizeitparks)
+    const c = s.w >> 1;
+    function freeSpot(w, h) {
+      for (let y = c - 20; y < c + 20; y++) for (let x = c - 20; x < c + 20; x++) {
+        let ok = true;
+        for (let dy = 0; dy < h && ok; dy++) for (let dx = 0; dx < w && ok; dx++) {
+          const j = s.idx(x + dx, y + dy);
+          if (s.terr[j] !== 0 || s.st[j] !== 0) ok = false;
+        }
+        if (ok) return { x, y };
+      }
+      return null;
+    }
+    const a = freeSpot(1, 1); if (a) s.place(27, a.x, a.y);
+    const b = freeSpot(2, 2); if (b) s.place(28, b.x, b.y);
+    s.computeStats();
+    let hotels = 0, amuse = 0;
+    for (let i = 0; i < s.w * s.h; i++) { if (s.st[i] === 27) hotels++; if (s.st[i] === 28) amuse++; }
+    return { hotels, amuse, cap: s.touristCap, hasTool: !!document.getElementById('tool_hotel') && !!document.getElementById('tool_amuse') };
+  });
+  await page.waitForTimeout(400); // Frames zum Baken der neuen Sprites
+  check('Hotel- & Freizeitpark-Werkzeuge in der Toolbar', tour.hasTool);
+  check('Hotel gebaut (' + tour.hotels + ')', tour.hotels >= 1);
+  check('Freizeitpark gebaut 2x2 (' + tour.amuse + ')', tour.amuse === 4);
+
   // Simulation laufen lassen
   await page.click('#spd3');
   await page.waitForTimeout(10000);

@@ -93,6 +93,8 @@
     { id: 'townhall', mode: 'single', s: S_TOWNHALL },
     { id: 'monument', mode: 'single', s: S_MONUMENT },
     { id: 'casino',   mode: 'single', s: S_CASINO },
+    { id: 'hotel',    mode: 'single', s: S_HOTEL },
+    { id: 'amuse',    mode: 'single', s: S_AMUSE },
   ];
   const toolById = {};
   TOOLS.forEach(tl => toolById[tl.id] = tl);
@@ -124,6 +126,8 @@
       case 'townhall': return Sprites.store.townhall;
       case 'monument': return Sprites.store.monument;
       case 'casino': return Sprites.store.casino;
+      case 'hotel': return Sprites.store.hotel;
+      case 'amuse': return Sprites.store.amuse;
     }
     return null;
   }
@@ -255,8 +259,9 @@
     const face = $('advisorFace');
     const fx = face.getContext('2d');
     fx.clearRect(0, 0, 16, 16);
-    // 'watershort' nutzt Wilmas Porträt (gleiche Beraterin, andere Botschaft)
-    const spr = Sprites.store.advisors[key === 'watershort' ? 'water' : key];
+    // 'watershort' nutzt Wilmas Porträt; 'tourism' den Kämmerer (Geldthema)
+    const portrait = key === 'watershort' ? 'water' : key === 'tourism' ? 'finance' : key;
+    const spr = Sprites.store.advisors[portrait];
     if (spr) fx.drawImage(spr, 0, 0);
     $('advisorName').textContent = t('adv.' + key);
     $('advisorText').textContent = t('advmsg.' + key);
@@ -881,6 +886,13 @@
         }
       }
       if (s === S_ROAD) extra += '<div>' + t('ui.traffic') + ': ' + sim.traffic[i] + '%</div>';
+      // Tourismus-Übersicht bei Hotel/Freizeitpark
+      if (s === S_HOTEL || s === S_AMUSE) {
+        extra += '<div style="margin-top:4px">🧳 ' + t('ui.tourists') + ': <b>' +
+          sim.tourists + '</b> / ' + sim.touristCap + ' ' + t('ui.beds') + '</div>' +
+          '<div style="color:#9aa3d6">' + t('ui.budgetTourism') + ': +' +
+          Math.round(sim.tourists * BAL.TOURISM.SPEND) + ' €/Mon.</div>';
+      }
     }
     let html = '<h3>' + name + '</h3>' +
       '<div>' + t('ui.pos') + ': ' + x + ', ' + y + '</div>' + extra;
@@ -1379,9 +1391,9 @@
         } else if (s === S_RUBBLE) {
           if (!inChunk) continue;
           g.drawImage(S('rubble'), lx, ly);
-        } else if (s === S_COAL || s === S_STADIUM || s === S_PORT) {
+        } else if (s === S_COAL || s === S_STADIUM || s === S_PORT || s === S_AMUSE) {
           if (sim.anchor[i] === i) // Anker kann im Randbereich liegen → Überhang zeichnen
-            g.drawImage(S(s === S_COAL ? 'coal' : s === S_STADIUM ? 'stadium' : 'port'), lx, ly, TILE * 2, TILE * 2);
+            g.drawImage(S(s === S_COAL ? 'coal' : s === S_STADIUM ? 'stadium' : s === S_PORT ? 'port' : 'amuse'), lx, ly, TILE * 2, TILE * 2);
         } else if (s >= S_RZONE && s <= S_IZONE) {
           if (!inChunk) continue;
           const lv = sim.lvl[i];
@@ -1405,6 +1417,7 @@
             [S_WTOWER]: 'wtower', [S_PUMP]: 'pump', [S_TOWNHALL]: 'townhall',
             [S_MONUMENT]: 'monument', [S_CASINO]: 'casino', [S_SOLAR]: 'solar',
             [S_BUSSTOP]: 'busstop', [S_TRAINSTATION]: 'trainstation', [S_SUBWAY]: 'subway',
+            [S_HOTEL]: 'hotel',
           };
           if (map[s]) g.drawImage(S(map[s]), lx, ly);
         }
@@ -1685,6 +1698,7 @@
     else if (s === S_CZONE) col = sim.lvl[i] ? '#6fb8ff' : '#3f6fbf';
     else if (s === S_IZONE) col = sim.lvl[i] ? '#f0d95c' : '#af9f3c';
     else if (s === S_COAL || s === S_WIND || s === S_SOLAR) col = '#ff9e2c';
+    else if (s === S_HOTEL || s === S_AMUSE) col = '#e5679f';
     else if (s === S_RUBBLE) col = '#6b6257';
     else if (s !== S_NONE) col = '#f2f2ef';
     if (sim.burn[i] > 0 || sim.floodT[i] > 0) col = sim.burn[i] ? '#ff3030' : '#40a0ff';
@@ -1986,6 +2000,7 @@
         (b.casino ? '<div><span>' + t('ui.budgetCasino') + '</span><span class="plus">+' + b.casino + ' €</span></div>' : '') +
         (b.fares ? '<div><span>' + t('ui.budgetFares') + '</span><span class="plus">+' + b.fares + ' €</span></div>' : '') +
         (b.export ? '<div><span>' + t('ui.budgetExport') + '</span><span class="plus">+' + b.export + ' €</span></div>' : '') +
+        (b.tourism ? '<div><span>' + t('ui.budgetTourism') + '</span><span class="plus">+' + b.tourism + ' €</span></div>' : '') +
         '<div><span>' + t('ui.budgetUpkeep') + '</span><span class="minus">−' + b.upkeep + ' €</span></div>' +
         (b.transit ? '<div><span>' + t('ui.budgetTransit') + '</span><span class="minus">−' + b.transit + ' €</span></div>' : '') +
         (b.interest ? '<div><span>' + t('ui.budgetInterest') + '</span><span class="minus">−' + b.interest + ' €</span></div>' : '') +

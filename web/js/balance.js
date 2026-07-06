@@ -103,6 +103,22 @@
       SHORT_HAPPY: 6,        // Zufriedenheits-Malus bei Wassermangel
     },
 
+    // Tourismus: Attraktionen locken Besucher, Hotels beherbergen sie.
+    // Ein eigener, mit der Stadt skalierender Einnahmestrom — Angebot
+    // (Hotelbetten) trifft Nachfrage (Attraktionen × Zufriedenheit).
+    TOURISM: {
+      HOTEL_BEDS: 50,        // Touristen-Betten je Hotel (mit Strom)
+      SPEND: 4,              // € je Tourist und Monat
+      HAPPY_MIN: 30,         // darunter kommen kaum Touristen
+      HAPPY_DIV: 55,         // Zufriedenheits-Faktor: (Glück − Min) / Div
+      ECON_F: 0.4,           // Konjunktureinfluss auf die Nachfrage
+      EXT_FULL: 1.0,         // mit Außenanbindung: voller Zustrom
+      EXT_LOCAL: 0.3,        // ohne Anbindung: nur lokale Ausflügler
+      ATTRACT: {             // Anziehungskraft je Attraktion
+        park: 4, stadium: 45, monument: 35, casino: 20, amuse: 70,
+      },
+    },
+
     // Wirtschaft: Konjunktur + Außenhandel über Randverbindungen & Häfen
     ECONOMY: {
       CYCLE_MONTHS: 48,        // Länge eines Konjunkturzyklus

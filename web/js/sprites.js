@@ -341,6 +341,47 @@ const Sprites = (() => {
     return c;
   }
 
+  // ---------- Freizeitpark 32x32 (Riesenrad + Zelt) ----------
+  function amuseSprite() {
+    const c = cv(32, 32), x = c.getContext('2d');
+    // Rasen-Untergrund + Weg
+    x.fillStyle = P.e; x.fillRect(0, 21, 32, 11);
+    x.fillStyle = P.E; for (let i = 0; i < 26; i++) x.fillRect((i * 11) % 32, 21 + (i * 5) % 11, 1, 1);
+    x.fillStyle = P.s; x.fillRect(0, 29, 32, 3);
+    // Riesenrad links
+    const CX = 11, CY = 13, R = 10;
+    x.fillStyle = P.M; x.fillRect(CX - 1, CY, 2, 16);           // Mast
+    x.fillStyle = P.m; x.fillRect(CX - 4, 28, 9, 2);            // Fuß
+    const cabs = [P.r, P.y, P.b, P.o, P.T, P.c, P.v, P.p];
+    for (let a = 0; a < 8; a++) {                               // Speichen + Gondeln
+      const ang = a / 8 * Math.PI * 2, ca = Math.cos(ang), sa = Math.sin(ang);
+      for (let t = 1; t < R; t++) { x.fillStyle = P.m; x.fillRect(Math.round(CX + ca * t), Math.round(CY + sa * t), 1, 1); }
+      const ex = Math.round(CX + ca * R), ey = Math.round(CY + sa * R);
+      x.fillStyle = P.K; x.fillRect(ex - 1, ey - 1, 3, 3);
+      x.fillStyle = cabs[a]; x.fillRect(ex, ey, 1, 1);
+    }
+    for (let j = 0; j < 32; j++) for (let i = 0; i < 32; i++) {  // Felge (Ring, per Pixel = crisp)
+      const dx = i - CX, dy = j - CY, d = Math.sqrt(dx * dx + dy * dy);
+      if (d >= R - 0.55 && d <= R + 0.55) { x.fillStyle = P.w; x.fillRect(i, j, 1, 1); }
+    }
+    x.fillStyle = P.y; x.fillRect(CX - 1, CY - 1, 3, 3);        // Nabe
+    x.fillStyle = P.K; x.fillRect(CX, CY, 1, 1);
+    // Zirkuszelt rechts (rot-weiß gestreift)
+    const tx = 24, ty = 18;
+    x.fillStyle = P.W; x.fillRect(tx - 5, ty, 11, 10);
+    x.fillStyle = P.r; for (let s = 0; s < 11; s += 2) x.fillRect(tx - 5 + s, ty, 1, 10);
+    x.fillStyle = P.K; x.fillRect(tx - 5, ty, 11, 1);
+    for (let row = 0; row < 5; row++) {                          // Zeltdach (Dreieck)
+      x.fillStyle = P.r; x.fillRect(tx - 1 - row, ty - 5 + row, 2 + row * 2, 1);
+    }
+    x.fillStyle = P.W; x.fillRect(tx - 1, ty - 5, 2, 1);
+    x.fillStyle = P.M; x.fillRect(tx, ty - 8, 1, 4);            // Fahnenmast
+    x.fillStyle = P.y; x.fillRect(tx + 1, ty - 8, 3, 2);        // Wimpel
+    // Schatten
+    x.fillStyle = 'rgba(0,0,0,0.25)'; x.fillRect(0, 31, 32, 1);
+    return c;
+  }
+
   // ---------- Schiene: Autotile (Maske N=1 E=2 S=4 W=8) ----------
   function railTile(mask) {
     const c = cv(TILE, TILE), x = c.getContext('2d');
@@ -1003,6 +1044,26 @@ const Sprites = (() => {
     '................',
   ]);
 
+  // Hotel (Tourismus): Hochhaus mit Leuchtreklame auf dem Dach
+  const HOTEL = art([
+    '................',
+    '....KKKKKKKK....',
+    '....KoyoyoyK....',
+    '.KKKKKKKKKKKKKK.',
+    '.KgqxqxqxqxqxgK.',
+    '.KgxqxqxqxqxqgK.',
+    '.KgqxqxqxqxqxgK.',
+    '.KgxqxqxqxqxqgK.',
+    '.KgqxqxqxqxqxgK.',
+    '.KgxqxqxqxqxqgK.',
+    '.KgqxqxqxqxqxgK.',
+    '.KgxqxqxqxqxqgK.',
+    '.KggWWKNNKWWggK.',
+    '.KKKKKKKKKKKKKK.',
+    '.EEEEEEEEEEEEEE.',
+    '................',
+  ]);
+
   // Luxus-Wohnturm (hoher Landwert, Stufe 4)
   const R5 = art([
     '....KKKKKKKK....',
@@ -1261,6 +1322,8 @@ const Sprites = (() => {
     store.townhall = TOWNHALL;
     store.monument = MONUMENT;
     store.casino = CASINO;
+    store.hotel = HOTEL;
+    store.amuse = amuseSprite();
     store.fire = [fireTile(0), fireTile(1), fireTile(2)];
     store.smoke = [smokeTile(0), smokeTile(1)];
     store.tornado = [TORNADO0, TORNADO1];

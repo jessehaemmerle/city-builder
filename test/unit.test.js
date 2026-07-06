@@ -7,7 +7,7 @@
 const M = require('./load-sim.js');
 const { Sim, rleEncode, rleDecode } = M;
 const { S_ROAD, S_RAIL, S_WIRE, S_RZONE, S_CZONE, S_IZONE, S_COAL, S_WIND, S_WTOWER, S_PUMP, S_SOLAR,
-  S_BUSSTOP, S_SUBWAY, S_PORT, S_PIPE, S_NONE, T_WATER } = M;
+  S_BUSSTOP, S_SUBWAY, S_PORT, S_PIPE, S_HOTEL, S_AMUSE, S_PARK, S_NONE, T_WATER } = M;
 
 let pass = 0, fail = 0;
 function check(name, cond) {
@@ -452,6 +452,67 @@ section('Wassernetz (Leitungen, Kapazität, Save/Load)');
   for (let i = 0; i < 64 * 64 && same; i++)
     if (s2.watered[i] !== s.watered[i] || s2.covWater[i] !== s.covWater[i]) same = false;
   check('Wassernetz überlebt Save/Load bitgenau', same);
+}
+
+section('Tourismus (Attraktionen + Hotels als Einnahmestrom)');
+{
+  // Attraktionen erzeugen Nachfrage, Hotels stellen Kapazität, Außenanbindung
+  // bringt die Touristen in die Stadt.
+  function buildTourismCity(opts) {
+    const o = opts || {};
+    const border = o.border !== false, hotels = o.hotels === undefined ? 7 : o.hotels;
+    const attractions = o.attractions !== false;
+    const s = new Sim(64, 64, 2024);
+    s.money = 500000; s.pop = 600; // Bau-Freigabe (Freizeitpark minPop 500)
+    const c = 32;
+    for (let y = c - 4; y <= c + 4; y++) for (let x = 0; x <= 30; x++) s.terr[s.idx(x, y)] = 0;
+    const x0 = border ? 0 : 5; // Straße bis zum Kartenrand (Außenanbindung) oder nicht
+    for (let x = x0; x <= 27; x++) s.place(S_ROAD, x, c);
+    s.place(S_WIND, 10, c + 1); s.place(S_WIND, 11, c + 1); // Strom übers Straßennetz
+    if (attractions) {
+      s.place(S_AMUSE, 8, c - 2);                            // Freizeitpark (2x2)
+      for (let x = 12; x <= 16; x++) s.place(S_PARK, x, c - 1);
+    }
+    for (let k = 0; k < hotels; k++) s.place(S_HOTEL, 18 + k, c - 1);
+    s.computePower(); s.computeRoadAccess(); s.computeCommute(); s.computeStats();
+    return s;
+  }
+  const ext = buildTourismCity({});
+  check('Attraktion erkannt (' + ext.attraction + ')', ext.attraction >= 70);
+  check('Hotels liefern Bettenkapazität', ext.touristCap === 7 * BAL.TOURISM.HOTEL_BEDS);
+  check('Touristen kommen (' + ext.tourists + ')', ext.tourists > 0);
+  ext.monthlyBudget();
+  check('Tourismus taucht als Einnahme im Budget auf (' + ext.lastBudget.tourism + ' €)',
+    ext.lastBudget.tourism > 0 && ext.lastBudget.tourism === Math.round(ext.tourists * BAL.TOURISM.SPEND));
+
+  const noHotels = buildTourismCity({ hotels: 0 });
+  check('Ohne Hotels: keine Touristen trotz Attraktion',
+    noHotels.attraction > 0 && noHotels.tourists === 0);
+  noHotels.monthlyBudget();
+  check('Ohne Hotels: keine Tourismus-Einnahmen', noHotels.lastBudget.tourism === 0);
+
+  const noAttraction = buildTourismCity({ attractions: false });
+  check('Ohne Attraktionen: keine Touristen trotz Hotels',
+    noAttraction.touristCap > 0 && noAttraction.tourists === 0);
+
+  const noExt = buildTourismCity({ border: false });
+  check('Außenanbindung steigert den Zustrom (' + noExt.tourists + ' → ' + ext.tourists + ')',
+    ext.tourists > noExt.tourists);
+
+  // minPop-Sperre des Freizeitparks
+  const y0 = new Sim(48, 48, 1);
+  y0.money = 100000; y0.pop = 0;
+  for (let yy = 24; yy <= 25; yy++) for (let xx = 22; xx <= 23; xx++) y0.terr[y0.idx(xx, yy)] = 0;
+  const rej = y0.canPlace(S_AMUSE, 22, 24);
+  check('Freizeitpark unter minPop abgelehnt', !rej.ok && rej.reason === 'err.minPop');
+  y0.pop = 600;
+  check('Freizeitpark ab 500 Einwohnern erlaubt', y0.canPlace(S_AMUSE, 22, 24).ok === true);
+
+  // Save/Load reproduziert Tourismus bitgenau
+  const s2 = Sim.load(ext.serialize());
+  check('Tourismus überlebt Save/Load',
+    s2.tourists === ext.tourists && s2.touristCap === ext.touristCap &&
+    s2.lastBudget.tourism === ext.lastBudget.tourism);
 }
 
 section('Stadtname & Cheat-Flag im Spielstand');

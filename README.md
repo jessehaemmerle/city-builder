@@ -43,6 +43,9 @@ bring deine Stadt vom Dorf zur Metropole.
 6. Mit **Polizei, Feuerwehr, Schule, Krankenhaus, Parks** Zufriedenheit und
    **Landwert** steigern — bei hohem Landwert entstehen Luxus-Hochhäuser.
 7. Meilensteine schalten **Rathaus, Stadion, Denkmal und Casino** frei.
+8. **Tourismus als Geldquelle**: **Freizeitpark** & Co. als Attraktionen bauen,
+   **Hotels** daneben setzen und mit einer Straße/Schiene zur Außenwelt verbinden —
+   die Touristen bringen Monat für Monat Geld in die Kasse.
 
 ### Steuerung
 
@@ -102,6 +105,12 @@ bring deine Stadt vom Dorf zur Metropole.
   Industrie **braucht** eine solche Anbindung, um zu exportieren — die
   Exporterlöse hängen an der Kapazität (Straße < Schiene < **⚓ Hafen** am
   Wasser) und tauchen als eigene Budget-Zeile auf.
+- **Tourismus** 🧳: Ein eigener, laufender Einnahmestrom. **Attraktionen**
+  (Freizeitpark, Stadion, Denkmal, Casino, Parks) locken Besucher an, **Hotels**
+  beherbergen sie (Betten = Kapazität). Wie viele Touristen kommen, hängt an der
+  Zufriedenheit, der Konjunktur und der Anbindung an die Außenwelt (Anreise). Je
+  mehr Attraktionen + Hotels + zufriedene Stadt, desto mehr Geld fließt Monat für
+  Monat — sichtbar als eigene Budget-Zeile und im Info-Fenster von Hotel/Park.
 - **Konjunkturzyklus**: Die Wirtschaft schwankt deterministisch zwischen
   📈 Boom und 📉 Rezession (Anzeige in der Statusleiste) und bewegt Nachfrage
   wie Exportpreise. Boom-/Krisen-Meldungen landen in Zeitung und Toasts.
