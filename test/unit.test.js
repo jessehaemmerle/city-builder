@@ -6,8 +6,8 @@
 'use strict';
 const M = require('./load-sim.js');
 const { Sim, rleEncode, rleDecode } = M;
-const { S_ROAD, S_WIRE, S_RZONE, S_CZONE, S_IZONE, S_COAL, S_WIND, S_WTOWER, S_PUMP, S_SOLAR,
-  S_BUSSTOP, S_SUBWAY, S_NONE, T_WATER } = M;
+const { S_ROAD, S_RAIL, S_WIRE, S_RZONE, S_CZONE, S_IZONE, S_COAL, S_WIND, S_WTOWER, S_PUMP, S_SOLAR,
+  S_BUSSTOP, S_SUBWAY, S_PORT, S_NONE, T_WATER } = M;
 
 let pass = 0, fail = 0;
 function check(name, cond) {
@@ -289,6 +289,114 @@ section('ÖPNV: Bus-Linie nimmt Autos von der Straße');
   withBus.s.computeStats();
   withBus.s.monthlyBudget();
   check('Budget weist ÖPNV-Betrieb aus', withBus.s.lastBudget.transit > 0);
+}
+
+section('Außenwelt & Export-Wirtschaft');
+{
+  const s = new Sim(64, 64, 4242);
+  s.money = 300000;
+  s.pop = 1000; // über der Export-Schonfrist
+  const c = 32;
+  for (let x = 0; x <= 40; x++) { s.terr[s.idx(x, c)] = 0; s.terr[s.idx(x, c - 1)] = 0; }
+  // Straße NICHT bis zum Rand
+  for (let x = 5; x <= 20; x++) s.place(S_ROAD, x, c);
+  s.place(S_IZONE, 10, c - 1); s.lvl[s.idx(10, c - 1)] = 3;
+  s.place(S_RZONE, 15, c - 1); s.lvl[s.idx(15, c - 1)] = 3;
+  s.computeRoadAccess(); s.computeCommute();
+  const iz = s.idx(10, c - 1);
+  check('Ohne Randanschluss: kein Export möglich', s.extOk(iz) === false);
+  check('Exportbasis = 0', s.exportBase === 0);
+  const diag = s.explainZone(iz);
+  check('Diagnose zeigt fehlende Außenanbindung', diag.some(d => d.k === 'diag.export' && !d.ok));
+  // Straße zum Kartenrand ziehen
+  for (let x = 0; x <= 4; x++) s.place(S_ROAD, x, c);
+  s.computeRoadAccess(); s.computeCommute();
+  check('Randstraße wird erkannt (extRoadTotal=' + s.extRoadTotal + ')', s.extRoadTotal >= 1);
+  check('Industrie hat jetzt Außenanbindung', s.extOk(iz) === true);
+  check('Exportbasis > 0 (' + s.exportBase.toFixed(1) + ')', s.exportBase > 0);
+  // Monatsbudget enthält Export + Erst-Anschluss-Event
+  s.computeStats();
+  s.monthlyBudget();
+  check('Budget weist Exporterlöse aus', s.lastBudget.export !== undefined && s.lastBudget.export >= 0);
+  check('Fernstraßen-Event gefeuert', s.events.some(e => e.key === 'ev.extRoad'));
+  // Schiene zum Rand = mehr Kapazität
+  for (let x = 0; x <= 20; x++) { s.terr[s.idx(x, c + 2)] = 0; s.place(S_RAIL, x, c + 2); }
+  s.computeRoadAccess(); s.computeCommute();
+  check('Bahnanschluss erkannt', s.extRailTotal >= 1);
+}
+
+section('Hafen');
+{
+  const s = new Sim(64, 64, 12345);
+  s.money = 300000;
+  s.pop = 1000;
+  // Küstenpunkt suchen: Land mit Wasser-Nachbar und Platz für 2x2
+  let spot = null;
+  for (let y = 1; y < 61 && !spot; y++) for (let x = 1; x < 61 && !spot; x++) {
+    if (s.canPlace(S_PORT, x, y).ok) spot = [x, y];
+  }
+  check('Hafen-Bauplatz an der Küste gefunden', !!spot);
+  if (spot) {
+    const r = s.place(S_PORT, spot[0], spot[1]);
+    check('Hafen gebaut (2x2)', r.ok && s.st[s.idx(spot[0] + 1, spot[1] + 1)] === S_PORT);
+    // Straße vom Hafen weg (Anbindung), damit er als Anschluss zählt
+    for (let dx = -3; dx <= 5; dx++) {
+      const px = spot[0] + dx, py = spot[1] + 2;
+      if (s.inMap(px, py) && s.terr[s.idx(px, py)] !== T_WATER) s.place(S_ROAD, px, py);
+    }
+    s.computeRoadAccess(); s.computeCommute();
+    check('Hafen zählt als Außenanschluss', s.portTotal >= 1);
+  }
+  // Landesinneres: Hafen abgelehnt
+  let inland = -1;
+  for (let i = 0; i < 64 * 64; i++)
+    if (s.terr[i] === 0 && !s.waterNear[i] && s.st[i] === S_NONE) { inland = i; break; }
+  const rej = s.canPlace(S_PORT, inland % 64, (inland / 64) | 0);
+  check('Hafen im Landesinneren abgelehnt', rej.ok === false && rej.reason === 'err.portWater');
+}
+
+section('Konjunkturzyklus');
+{
+  const s = new Sim(48, 48, 999);
+  const e1 = s.econAt(10), e2 = s.econAt(10);
+  check('Deterministisch (gleicher Monat → gleicher Wert)', e1 === e2);
+  let hi = -2, lo = 2;
+  for (let m = 0; m < 96; m++) { const e = s.econAt(m); hi = Math.max(hi, e); lo = Math.min(lo, e); }
+  check('Zyklus erreicht Boom-Bereich (' + hi.toFixed(2) + ')', hi > BAL.ECONOMY.PHASE_HI);
+  check('Zyklus erreicht Rezession (' + lo.toFixed(2) + ')', lo < BAL.ECONOMY.PHASE_LO);
+  check('Werte in [-1, 1]', hi <= 1 && lo >= -1);
+}
+
+section('Riesenkarten (Performance-Smoke)');
+{
+  let t0 = Date.now();
+  const big = new Sim(1024, 1024, 7);
+  const genMs = Date.now() - t0;
+  check('1024×1024 generiert in <30s (' + genMs + ' ms)', genMs < 30000);
+  big.money = 500000;
+  const c = 512;
+  for (let x = c - 10; x <= c + 10; x++) { big.terr[big.idx(x, c)] = 0; big.place(S_ROAD, x, c); }
+  for (let x = c - 8; x <= c + 8; x++) { big.terr[big.idx(x, c - 1)] = 0; big.place(S_RZONE, x, c - 1); }
+  big.place(S_WIND, c, c + 2);
+  t0 = Date.now();
+  for (let t = 0; t < 35; t++) { big.tick(); big.events.length = 0; }
+  const tickMs = (Date.now() - t0) / 35;
+  check('Tick-Zeit auf 1024er-Karte < 150 ms (' + tickMs.toFixed(1) + ' ms)', tickMs < 150);
+  check('Simulation bleibt konsistent', isFinite(big.money) && big.pop >= 0);
+  // 256er-Karte: Wachstum funktioniert normal
+  const mid = new Sim(256, 256, 11);
+  mid.money = 300000;
+  const m = 128;
+  for (let x = m - 10; x <= m + 10; x++) { mid.terr[mid.idx(x, m)] = 0; mid.place(S_ROAD, x, m); }
+  for (let x = m - 8; x <= m + 8; x++) {
+    mid.terr[mid.idx(x, m - 1)] = 0; mid.place(S_RZONE, x, m - 1);
+    mid.terr[mid.idx(x, m + 1)] = 0; mid.place(x % 2 ? S_CZONE : S_IZONE, x, m + 1);
+  }
+  mid.terr[mid.idx(m - 11, m)] = 0; mid.terr[mid.idx(m + 11, m)] = 0;
+  const w1 = mid.place(S_WIND, m - 11, m), w2 = mid.place(S_WIND, m + 11, m);
+  check('256er-Karte: Windräder stehen', w1.ok || w2.ok);
+  for (let t = 0; t < 360; t++) { mid.tick(); mid.events.length = 0; }
+  check('256er-Karte: Stadt wächst (' + mid.pop + ')', mid.pop > 0);
 }
 
 section('Stadtname & Cheat-Flag im Spielstand');

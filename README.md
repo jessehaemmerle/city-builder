@@ -93,6 +93,17 @@ bring deine Stadt vom Dorf zur Metropole.
   Geldnot, Stromausfall, Smog, fehlender Feuerwehr oder Wassermangel.
 - **Meilensteine**: Boni bei 100 / 500 / 1.500 / 2.500 / 4.000 Einwohnern
   inkl. Freischaltung der Belohnungsgebäude.
+- **Außenwelt & Außenhandel**: Straßen und Schienen, die bis zum Kartenrand
+  gebaut werden, verbinden die Stadt mit der Außenwelt (gelbe Pfeil-Marker).
+  Industrie **braucht** eine solche Anbindung, um zu exportieren — die
+  Exporterlöse hängen an der Kapazität (Straße < Schiene < **⚓ Hafen** am
+  Wasser) und tauchen als eigene Budget-Zeile auf.
+- **Konjunkturzyklus**: Die Wirtschaft schwankt deterministisch zwischen
+  📈 Boom und 📉 Rezession (Anzeige in der Statusleiste) und bewegt Nachfrage
+  wie Exportpreise. Boom-/Krisen-Meldungen landen in Zeitung und Toasts.
+- **Kartengrößen bis 1024×1024**: von „Klein (48×48)“ bis „Kontinent“
+  (>1 Million Kacheln) — dank LRU-Chunk-Cache, Multi-Source-BFS statt
+  Radius-Scans und Sampling-Minimap flüssig spielbar (57 FPS im Test).
 
 ### Spielmodi
 

@@ -95,6 +95,21 @@
       sub:   { board: 3, segDiv: 6, lineUpkeep: 60, stopUpkeep: 6 },
     },
 
+    // Wirtschaft: Konjunktur + Außenhandel über Randverbindungen & Häfen
+    ECONOMY: {
+      CYCLE_MONTHS: 48,        // Länge eines Konjunkturzyklus
+      NOISE: 0.25,             // seeded Zufallsanteil am Zyklus
+      DEMAND_F_CI: 0.25,       // Nachfrage-Ausschlag Gewerbe/Industrie
+      DEMAND_F_R: 0.12,        // Nachfrage-Ausschlag Wohnen
+      PHASE_HI: 0.45, PHASE_LO: -0.45, // Boom-/Rezessions-Schwellen
+      EXPORT_PER_IJOB: 0.6,    // € je exportierendem Industriejob und Monat
+      CAP_ROAD: 80,            // Export-Kapazität je Straßen-Randanschluss
+      CAP_RAIL: 250,           // … je Schienen-Randanschluss
+      CAP_PORT: 400,           // … je Hafen
+      NO_EXPORT_PENALTY: 0.5,  // Industrie-Wachstumsfaktor ohne Außenanbindung
+      NO_EXPORT_MIN_POP: 300,  // darunter greift die Strafe nicht
+    },
+
     // Epochen: die Zeit verändert das Spiel (Start 1990)
     ERA: {
       SOLAR_YEAR: 1994,       // Solaranlage wird verfügbar

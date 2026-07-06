@@ -243,6 +243,46 @@ const Sprites = (() => {
     return c;
   }
 
+  // ---------- Hafen 32x32 prozedural (Kran, Halle, Container, Kai) ----------
+  function portSprite() {
+    const c = cv(32, 32), x = c.getContext('2d');
+    // Kai-Fläche
+    x.fillStyle = P.m; x.fillRect(0, 14, 32, 15);
+    x.fillStyle = P.M;
+    for (let i = 0; i < 40; i++) x.fillRect((i * 7) % 32, 14 + (i * 5) % 15, 1, 1);
+    // Kaimauer unten
+    x.fillStyle = P.K; x.fillRect(0, 28, 32, 2);
+    x.fillStyle = P.N; x.fillRect(0, 27, 32, 1);
+    for (let px = 2; px < 32; px += 7) { // Poller
+      x.fillStyle = P.K; x.fillRect(px, 25, 2, 3);
+    }
+    // Lagerhalle links
+    x.fillStyle = P.K; x.fillRect(1, 5, 14, 12);
+    x.fillStyle = P.d; x.fillRect(2, 6, 12, 4);   // Dach
+    x.fillStyle = P.D; for (let px = 2; px < 14; px += 2) x.fillRect(px, 6, 1, 4);
+    x.fillStyle = P.n; x.fillRect(2, 10, 12, 6);  // Wand
+    x.fillStyle = P.M; x.fillRect(5, 12, 6, 4);   // Tor
+    x.fillStyle = P.K; x.fillRect(4, 12, 1, 4); x.fillRect(11, 12, 1, 4);
+    // Containerstapel (bunt, versetzt)
+    const cols = [P.r, P.b, P.y, P.T, P.o, P.v];
+    let k = 0;
+    for (let row = 0; row < 2; row++) for (let col = 0; col < 3; col++) {
+      const bx = 17 + col * 5, by = 17 + row * 4;
+      x.fillStyle = P.K; x.fillRect(bx - 1, by - 1, 6, 5);
+      x.fillStyle = cols[k++ % cols.length]; x.fillRect(bx, by, 4, 3);
+    }
+    // Kran rechts oben
+    x.fillStyle = P.K;
+    x.fillRect(21, 0, 3, 14);            // Turm
+    x.fillRect(21, 1, 11, 2);            // Ausleger
+    x.fillStyle = P.o; x.fillRect(22, 2, 1, 11);
+    x.fillStyle = P.K; x.fillRect(29, 3, 1, 5); // Seil
+    x.fillStyle = P.y; x.fillRect(28, 8, 3, 2); // Container am Haken
+    // Schatten
+    x.fillStyle = 'rgba(0,0,0,0.25)'; x.fillRect(0, 30, 32, 1);
+    return c;
+  }
+
   // ---------- Stadion 32x32 prozedural (Ellipsen-Ringe) ----------
   function stadiumSprite() {
     const c = cv(32, 32), x = c.getContext('2d');
@@ -1181,6 +1221,7 @@ const Sprites = (() => {
     store.busstop = BUSSTOP;
     store.trainstation = TRAINSTATION;
     store.subway = SUBWAY;
+    store.port = portSprite();
     store.stadium = stadiumSprite();
     store.wtower = WTOWER;
     store.pump = PUMP;

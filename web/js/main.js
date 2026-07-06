@@ -82,6 +82,7 @@
     { id: 'solar',    mode: 'single', s: S_SOLAR },
     { id: 'wtower',   mode: 'single', s: S_WTOWER },
     { id: 'pump',     mode: 'single', s: S_PUMP },
+    { id: 'port',     mode: 'single', s: S_PORT },
     { id: 'park',     key: '0', mode: 'single', s: S_PARK },
     { id: 'police',   mode: 'single', s: S_POLICE },
     { id: 'firedep',  mode: 'single', s: S_FIREDEP },
@@ -106,6 +107,7 @@
       case 'wind': return Sprites.get('wind', frame || 0);
       case 'coal': return Sprites.store.coal;
       case 'solar': return Sprites.store.solar;
+      case 'port': return Sprites.store.port;
       case 'busstop': return Sprites.store.busstop;
       case 'trainstation': return Sprites.store.trainstation;
       case 'subway': return Sprites.store.subway;
@@ -342,6 +344,7 @@
     'ev.ufo': 'news.ufo', 'ev.broke': 'news.broke',
     'ev.era94': 'news.era', 'ev.era98': 'news.era', 'ev.era00': 'news.era', 'ev.era02': 'news.era',
     'ev.scenWon': 'news.scen', 'ev.scenLost': 'news.scen',
+    'ev.boom': 'news.boom', 'ev.bust': 'news.bust',
   };
 
   // ---------- Stadt als Link teilen ----------
@@ -953,11 +956,18 @@
     const pw = $('uiPower');
     pw.textContent = '⚡ ' + sim.powerNeed + '/' + sim.powerSupply;
     pw.style.color = sim.powerNeed > sim.powerSupply ? '#ff6b6b' : '';
+    // Konjunktur-Anzeige
+    const ec = sim.econ;
+    const eco = $('uiEcon');
+    eco.textContent = ec > BAL.ECONOMY.PHASE_HI ? t('ui.econ.boom')
+      : ec < BAL.ECONOMY.PHASE_LO ? t('ui.econ.bust') : t('ui.econ.normal');
+    eco.title = t('ui.econLbl') + ': ' + Math.round(ec * 100) + '%';
+    eco.style.color = ec > BAL.ECONOMY.PHASE_HI ? '#6fe06f' : ec < BAL.ECONOMY.PHASE_LO ? '#ff6b6b' : '';
     $('uiDate').textContent = sim.dateStr();
     $('rciR').style.height = Math.max(0, sim.demandR) * 100 + '%';
     $('rciC').style.height = Math.max(0, sim.demandC) * 100 + '%';
     $('rciI').style.height = Math.max(0, sim.demandI) * 100 + '%';
-    for (const id of ['stadium', 'townhall', 'monument', 'casino', 'subway']) {
+    for (const id of ['stadium', 'townhall', 'monument', 'casino', 'subway', 'port']) {
       const el = $('tool_' + id);
       const def = DEFS[toolById[id].s];
       if (el) el.classList.toggle('locked', sim.pop < def.minPop);
@@ -1260,32 +1270,39 @@
   // Rauch, Symbole, Fahrzeuge, Akteure, Overlays, Vorschau.
   // ============================================================
   const CHUNK = 16;
-  let chunks = [];      // [cy][cx] = {cv, dirty, night}
+  const MAX_CHUNKS = 320; // LRU-Deckel: bei 1024²-Karten wären alle Chunks ~1 GB
+  let chunkMap = new Map();
   let chunksX = 0, chunksY = 0;
 
   function initChunks() {
     chunksX = Math.ceil(sim.w / CHUNK);
     chunksY = Math.ceil(sim.h / CHUNK);
-    chunks = [];
-    for (let cy = 0; cy < chunksY; cy++) {
-      chunks[cy] = [];
-      for (let cx = 0; cx < chunksX; cx++) {
-        const cv = document.createElement('canvas');
-        cv.width = CHUNK * TILE; cv.height = CHUNK * TILE;
-        chunks[cy][cx] = { cv, dirty: true, night: false };
-      }
-    }
+    chunkMap = new Map();
+  }
+
+  function getChunk(cx, cy) {
+    const key = cy * chunksX + cx;
+    let ch = chunkMap.get(key);
+    if (!ch) { ch = { cv: null, dirty: true, night: false, used: 0 }; chunkMap.set(key, ch); }
+    return ch;
+  }
+
+  function evictChunks() {
+    if (chunkMap.size <= MAX_CHUNKS) return;
+    const entries = [...chunkMap.entries()].sort((a, b) => a[1].used - b[1].used);
+    const drop = chunkMap.size - MAX_CHUNKS;
+    for (let k = 0; k < drop; k++) chunkMap.delete(entries[k][0]);
   }
 
   function invalidateTile(i) {
     const x = i % sim.w, y = (i / sim.w) | 0;
-    const cx = (x / CHUNK) | 0, cy = (y / CHUNK) | 0;
-    if (chunks[cy] && chunks[cy][cx]) chunks[cy][cx].dirty = true;
+    const ch = chunkMap.get(((y / CHUNK) | 0) * chunksX + ((x / CHUNK) | 0));
+    if (ch) ch.dirty = true;
   }
 
   function drainChanged() {
     if (sim.allChanged) {
-      for (const row of chunks) for (const c of row) c.dirty = true;
+      for (const ch of chunkMap.values()) ch.dirty = true;
       sim.allChanged = false;
       sim.changed.length = 0;
       return;
@@ -1295,7 +1312,11 @@
   }
 
   function bakeChunk(cx, cy, isNight) {
-    const ch = chunks[cy][cx];
+    const ch = getChunk(cx, cy);
+    if (!ch.cv) {
+      ch.cv = document.createElement('canvas');
+      ch.cv.width = CHUNK * TILE; ch.cv.height = CHUNK * TILE;
+    }
     const g = ch.cv.getContext('2d');
     g.imageSmoothingEnabled = false;
     g.clearRect(0, 0, ch.cv.width, ch.cv.height);
@@ -1342,9 +1363,9 @@
         } else if (s === S_RUBBLE) {
           if (!inChunk) continue;
           g.drawImage(S('rubble'), lx, ly);
-        } else if (s === S_COAL || s === S_STADIUM) {
+        } else if (s === S_COAL || s === S_STADIUM || s === S_PORT) {
           if (sim.anchor[i] === i) // Anker kann im Randbereich liegen → Überhang zeichnen
-            g.drawImage(S(s === S_COAL ? 'coal' : 'stadium'), lx, ly, TILE * 2, TILE * 2);
+            g.drawImage(S(s === S_COAL ? 'coal' : s === S_STADIUM ? 'stadium' : 'port'), lx, ly, TILE * 2, TILE * 2);
         } else if (s >= S_RZONE && s <= S_IZONE) {
           if (!inChunk) continue;
           const lv = sim.lvl[i];
@@ -1433,11 +1454,13 @@
     const c0y = Math.max(0, (y0 / CHUNK) | 0), c1y = Math.min(chunksY - 1, (y1 / CHUNK) | 0);
     for (let cy = c0y; cy <= c1y; cy++) {
       for (let cx = c0x; cx <= c1x; cx++) {
-        const ch = chunks[cy][cx];
-        if (ch.dirty || ch.night !== isNight) bakeChunk(cx, cy, isNight);
+        const ch = getChunk(cx, cy);
+        ch.used = now;
+        if (ch.dirty || ch.night !== isNight || !ch.cv) bakeChunk(cx, cy, isNight);
         ctx.drawImage(ch.cv, ox + cx * CHUNK * ts, oy + cy * CHUNK * ts, CHUNK * ts, CHUNK * ts);
       }
     }
+    if ((now | 0) % 1000 < 20) evictChunks();
 
     // 3) Animiertes & Symbole live
     for (let y = y0; y <= y1; y++) {
@@ -1466,6 +1489,17 @@
           ctx.globalAlpha = 0.75;
           ctx.drawImage(waterSpr, sx, sy, ts, ts);
           ctx.globalAlpha = 1;
+        }
+        // Außenwelt-Anschluss: gelber Pfeil an Rand-Straßen/-Schienen
+        if ((s === S_ROAD || s === S_RAIL) && (x === 0 || y === 0 || x === W - 1 || y === H - 1)) {
+          ctx.fillStyle = blink ? '#f0d95c' : '#ffef9e';
+          ctx.beginPath();
+          const cxp = sx + ts / 2, cyp = sy + ts / 2, a = 4 * z;
+          if (x === 0) { ctx.moveTo(sx + a, cyp - a); ctx.lineTo(sx + a, cyp + a); ctx.lineTo(sx, cyp); }
+          else if (x === W - 1) { ctx.moveTo(sx + ts - a, cyp - a); ctx.lineTo(sx + ts - a, cyp + a); ctx.lineTo(sx + ts, cyp); }
+          else if (y === 0) { ctx.moveTo(cxp - a, sy + a); ctx.lineTo(cxp + a, sy + a); ctx.lineTo(cxp, sy); }
+          else { ctx.moveTo(cxp - a, sy + ts - a); ctx.lineTo(cxp + a, sy + ts - a); ctx.lineTo(cxp, sy + ts); }
+          ctx.closePath(); ctx.fill();
         }
       }
     }
@@ -1620,35 +1654,39 @@
 
   // ---------- Minimap ----------
   const MINI_TERR = ['#3a7a38', '#2f6fc4', '#d8b56a', '#2c6e31'];
+  function miniColor(i) {
+    let col = MINI_TERR[sim.terr[i]];
+    const s = sim.st[i];
+    if (s === S_ROAD) col = '#8a8a95';
+    else if (s === S_RAIL) col = '#6b6a5a';
+    else if (s === S_WIRE) col = '#6b5636';
+    else if (s === S_RZONE) col = sim.lvl[i] ? '#6fe06f' : '#3f9f4f';
+    else if (s === S_CZONE) col = sim.lvl[i] ? '#6fb8ff' : '#3f6fbf';
+    else if (s === S_IZONE) col = sim.lvl[i] ? '#f0d95c' : '#af9f3c';
+    else if (s === S_COAL || s === S_WIND || s === S_SOLAR) col = '#ff9e2c';
+    else if (s === S_RUBBLE) col = '#6b6257';
+    else if (s !== S_NONE) col = '#f2f2ef';
+    if (sim.burn[i] > 0 || sim.floodT[i] > 0) col = sim.burn[i] ? '#ff3030' : '#40a0ff';
+    return col;
+  }
+  // Sampling statt Vollscan: konstant 128² Abfragen, egal wie groß die Karte ist
   function renderMini() {
     if (!sim) return;
     const W = sim.w, H = sim.h;
-    const img = mctx.createImageData(W, H);
-    const put = (i, hex) => {
-      const r = parseInt(hex.slice(1, 3), 16), g = parseInt(hex.slice(3, 5), 16), b = parseInt(hex.slice(5, 7), 16);
-      img.data[i * 4] = r; img.data[i * 4 + 1] = g; img.data[i * 4 + 2] = b; img.data[i * 4 + 3] = 255;
-    };
-    for (let i = 0; i < W * H; i++) {
-      let col = MINI_TERR[sim.terr[i]];
-      const s = sim.st[i];
-      if (s === S_ROAD) col = '#8a8a95';
-      else if (s === S_RAIL) col = '#6b6a5a';
-      else if (s === S_WIRE) col = '#6b5636';
-      else if (s === S_RZONE) col = sim.lvl[i] ? '#6fe06f' : '#3f9f4f';
-      else if (s === S_CZONE) col = sim.lvl[i] ? '#6fb8ff' : '#3f6fbf';
-      else if (s === S_IZONE) col = sim.lvl[i] ? '#f0d95c' : '#af9f3c';
-      else if (s === S_COAL || s === S_WIND) col = '#ff9e2c';
-      else if (s === S_RUBBLE) col = '#6b6257';
-      else if (s !== S_NONE) col = '#f2f2ef';
-      if (sim.burn[i] > 0 || sim.floodT[i] > 0) col = sim.burn[i] ? '#ff3030' : '#40a0ff';
-      put(i, col);
+    const img = mctx.createImageData(128, 128);
+    for (let my = 0; my < 128; my++) {
+      const y = (my * H / 128) | 0;
+      for (let mx = 0; mx < 128; mx++) {
+        const x = (mx * W / 128) | 0;
+        const col = miniColor(sim.idx(x, y));
+        const o = (my * 128 + mx) * 4;
+        img.data[o] = parseInt(col.slice(1, 3), 16);
+        img.data[o + 1] = parseInt(col.slice(3, 5), 16);
+        img.data[o + 2] = parseInt(col.slice(5, 7), 16);
+        img.data[o + 3] = 255;
+      }
     }
-    const tmp = document.createElement('canvas');
-    tmp.width = W; tmp.height = H;
-    tmp.getContext('2d').putImageData(img, 0, 0);
-    mctx.imageSmoothingEnabled = false;
-    mctx.clearRect(0, 0, 128, 128);
-    mctx.drawImage(tmp, 0, 0, 128, 128);
+    mctx.putImageData(img, 0, 0);
     const sc = 128 / (W * TILE);
     mctx.strokeStyle = '#ffffff';
     mctx.lineWidth = 1;
@@ -1926,6 +1964,7 @@
         '<div><span>' + t('ui.budgetIncome') + '</span><span class="plus">+' + b.income + ' €</span></div>' +
         (b.casino ? '<div><span>' + t('ui.budgetCasino') + '</span><span class="plus">+' + b.casino + ' €</span></div>' : '') +
         (b.fares ? '<div><span>' + t('ui.budgetFares') + '</span><span class="plus">+' + b.fares + ' €</span></div>' : '') +
+        (b.export ? '<div><span>' + t('ui.budgetExport') + '</span><span class="plus">+' + b.export + ' €</span></div>' : '') +
         '<div><span>' + t('ui.budgetUpkeep') + '</span><span class="minus">−' + b.upkeep + ' €</span></div>' +
         (b.transit ? '<div><span>' + t('ui.budgetTransit') + '</span><span class="minus">−' + b.transit + ' €</span></div>' : '') +
         (b.interest ? '<div><span>' + t('ui.budgetInterest') + '</span><span class="minus">−' + b.interest + ' €</span></div>' : '') +
@@ -1976,20 +2015,24 @@
   function drawPreview() {
     const seed = parseInt($('seedInput').value, 10) || 1;
     const size = parseInt($('sizeSel').value, 10) || 64;
-    const tmp = new Sim(size, size, seed);
+    // Das Rauschen ist auf 0..1 normiert: eine 160er-Generierung zeigt
+    // dieselbe Karte wie 1024 — nur gröber. Hält die Vorschau sofortig.
+    const gen = Math.min(size, 160);
+    const tmp = new Sim(gen, gen, seed);
     const c = $('mapPreview'), x = c.getContext('2d');
-    const img = x.createImageData(size, size);
+    const img = x.createImageData(gen, gen);
     const cols = [[62, 122, 56], [47, 111, 196], [216, 181, 106], [44, 110, 49]];
-    for (let i = 0; i < size * size; i++) {
+    for (let i = 0; i < gen * gen; i++) {
       const col = cols[tmp.terr[i]];
       img.data[i * 4] = col[0]; img.data[i * 4 + 1] = col[1]; img.data[i * 4 + 2] = col[2]; img.data[i * 4 + 3] = 255;
     }
     const t2 = document.createElement('canvas');
-    t2.width = size; t2.height = size;
+    t2.width = gen; t2.height = gen;
     t2.getContext('2d').putImageData(img, 0, 0);
     x.imageSmoothingEnabled = false;
     x.clearRect(0, 0, 192, 192);
     x.drawImage(t2, 0, 0, 192, 192);
+    $('previewNote').textContent = t('ui.preview') + (size >= 256 ? ' · ' + t('ui.sizeWarn') : '');
   }
 
   function openNewGame() {
@@ -2183,18 +2226,31 @@
   // ---------- Foto-Modus: Postkarte ----------
   function renderPostcard() {
     const W = sim.w, H = sim.h;
-    // Ganze Stadt bei Tag ablichten
-    const photo = document.createElement('canvas');
-    photo.width = W * TILE; photo.height = H * TILE;
-    const px = photo.getContext('2d');
-    px.imageSmoothingEnabled = false;
-    const waterSpr = Sprites.get('water', 0, false);
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++)
-      if (sim.terr[sim.idx(x, y)] === T_WATER) px.drawImage(waterSpr, x * TILE, y * TILE);
-    for (let cy = 0; cy < chunksY; cy++) for (let cx = 0; cx < chunksX; cx++) {
-      bakeChunk(cx, cy, false);
-      px.drawImage(chunks[cy][cx].cv, cx * CHUNK * TILE, cy * CHUNK * TILE);
-      chunks[cy][cx].dirty = true; // Anzeige backt danach wieder aktuell
+    let photo;
+    if (W > 160) {
+      // Riesenkarten: Pixel-Luftbild (2px/Kachel) statt 16k-Sprite-Render
+      photo = document.createElement('canvas');
+      photo.width = W * 2; photo.height = H * 2;
+      const px = photo.getContext('2d');
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        px.fillStyle = miniColor(sim.idx(x, y));
+        px.fillRect(x * 2, y * 2, 2, 2);
+      }
+    } else {
+      // Ganze Stadt bei Tag ablichten
+      photo = document.createElement('canvas');
+      photo.width = W * TILE; photo.height = H * TILE;
+      const px = photo.getContext('2d');
+      px.imageSmoothingEnabled = false;
+      const waterSpr = Sprites.get('water', 0, false);
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++)
+        if (sim.terr[sim.idx(x, y)] === T_WATER) px.drawImage(waterSpr, x * TILE, y * TILE);
+      for (let cy = 0; cy < chunksY; cy++) for (let cx = 0; cx < chunksX; cx++) {
+        bakeChunk(cx, cy, false);
+        const ch = getChunk(cx, cy);
+        px.drawImage(ch.cv, cx * CHUNK * TILE, cy * CHUNK * TILE);
+        ch.dirty = true; // Anzeige backt danach wieder aktuell
+      }
     }
     // Postkarte 640x480
     const pc = document.createElement('canvas');
