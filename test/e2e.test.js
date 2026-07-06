@@ -190,6 +190,7 @@ function check(name, cond) {
   await page.waitForTimeout(300);
   const afterCheat = await page.evaluate(() => ({ m: window.RETRO.sim.money, c: window.RETRO.sim.cheated }));
   check('Cheat „geld“ wirkt (+5000, markiert)', afterCheat.m === moneyBefore + 5000 && afterCheat.c === true);
+  await page.keyboard.press('a'); // „geld“ enthielt ein d (Pan) — Kamera zurücksetzen
   await page.click('#spd3');
 
   // --- Solar: 1990 gesperrt ---
@@ -227,6 +228,47 @@ function check(name, cond) {
   await page.locator('.bbsItem', { hasText: '←' }).click();
   await page.locator('.bbsItem', { hasText: /AUFLEGEN|HANG UP/ }).click();
   await page.waitForTimeout(200);
+
+  // --- Linienverwaltung: Bus-Stopps bauen, Linie per Klick zusammenstellen ---
+  await page.click('#spd0'); // Pause für stabile Klicks
+  await page.click('#tool_busstop');
+  await page.mouse.click(640 - 192, 400 - 32); // 1 Kachel über der Straße, links
+  await page.mouse.click(640 + 160, 400 - 32); // 1 Kachel über der Straße, rechts
+  await page.waitForTimeout(200);
+  const stopsBuilt = await page.evaluate(() => {
+    const s = window.RETRO.sim;
+    let n = 0;
+    for (let i = 0; i < s.w * s.h; i++) if (s.st[i] === 22) n++;
+    return n;
+  });
+  check('2 Bus-Haltestellen gebaut', stopsBuilt === 2);
+  await page.click('#btnTransit');
+  await page.waitForTimeout(200);
+  check('Linien-Panel offen', await page.isVisible('#transitPanel'));
+  await page.click('#btnNewBus');
+  await page.waitForTimeout(200);
+  check('Stopp-Klick-Modus aktiv', await page.isVisible('#transitPickBar'));
+  await page.mouse.click(640 - 192, 400 - 32);
+  await page.waitForTimeout(150);
+  await page.mouse.click(640 + 160, 400 - 32);
+  await page.waitForTimeout(150);
+  await page.click('#btnPickDone');
+  await page.waitForTimeout(300);
+  const lineState = await page.evaluate(() => {
+    const L = window.RETRO.sim.lines[0];
+    return L ? { stops: L.stops.length, active: L.active, type: L.type } : null;
+  });
+  console.log('   Linie:', JSON.stringify(lineState));
+  check('Bus-Linie mit 2 Stopps aktiv', !!lineState && lineState.stops === 2 && lineState.active === true);
+  const lineListed = await page.evaluate(() => document.querySelectorAll('#lineList .lineRow').length);
+  check('Linie im Panel gelistet', lineListed === 1);
+  // Routen-Overlay
+  await page.selectOption('#overlaySel', 'lines');
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: require('path').join(__dirname, '..', 'docs', 'screenshot-transit.png') });
+  await page.selectOption('#overlaySel', '');
+  await page.click('#btnTransit'); // Panel wieder schließen
+  await page.click('#spd3');
 
   // --- Postkarte ---
   await page.click('#btnCamera');

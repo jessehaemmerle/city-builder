@@ -6,7 +6,8 @@
 'use strict';
 const M = require('./load-sim.js');
 const { Sim, rleEncode, rleDecode } = M;
-const { S_ROAD, S_WIRE, S_RZONE, S_CZONE, S_IZONE, S_COAL, S_WIND, S_WTOWER, S_PUMP, S_SOLAR, S_NONE, T_WATER } = M;
+const { S_ROAD, S_WIRE, S_RZONE, S_CZONE, S_IZONE, S_COAL, S_WIND, S_WTOWER, S_PUMP, S_SOLAR,
+  S_BUSSTOP, S_SUBWAY, S_NONE, T_WATER } = M;
 
 let pass = 0, fail = 0;
 function check(name, cond) {
@@ -209,6 +210,85 @@ section('Epochen (Solar, CO₂-Abgabe, E-Autos)');
   s3.year = 1994;
   s3.monthlyBudget();
   check('Era-Event 1994 gefeuert', s3.events.some(e => e.key === 'ev.era94'));
+}
+
+section('ÖPNV: U-Bahn verbindet getrennte Netze');
+{
+  const s = new Sim(64, 64, 5150);
+  s.money = 200000;
+  s.pop = 1500; // über minPop der U-Bahn und über der Dorf-Schonfrist
+  const c = 32;
+  for (let x = 8; x <= 52; x++) { s.terr[s.idx(x, c)] = 0; s.terr[s.idx(x, c - 1)] = 0; }
+  // Zwei getrennte Straßennetze (Lücke x=21..39 bleibt leer!)
+  for (let x = 10; x <= 20; x++) s.place(S_ROAD, x, c);
+  for (let x = 40; x <= 50; x++) s.place(S_ROAD, x, c);
+  s.place(S_RZONE, 12, c - 1); s.lvl[s.idx(12, c - 1)] = 2;
+  s.place(S_IZONE, 42, c - 1); s.lvl[s.idx(42, c - 1)] = 2;
+  s.computeRoadAccess(); s.computeCommute();
+  const rz = s.idx(12, c - 1), iz = s.idx(42, c - 1);
+  check('Ohne Linie: getrennt', !s.connectedOk(rz, S_RZONE) && !s.connectedOk(iz, S_IZONE));
+  check('Ohne Linie: kein Arbeitsweg', s.commuteDist[rz] === -1);
+  // U-Bahn-Stationen an beiden Enden + Linie
+  s.place(S_SUBWAY, 14, c - 1);
+  s.place(S_SUBWAY, 44, c - 1);
+  const L = s.createLine('sub');
+  check('Linie angelegt', !!L && L.type === 'sub');
+  check('Stopp 1 hinzugefügt', s.addStop(L.id, s.idx(14, c - 1)).ok);
+  check('Stopp 2 hinzugefügt', s.addStop(L.id, s.idx(44, c - 1)).ok);
+  check('Falscher Stopp-Typ abgelehnt', s.addStop(L.id, s.idx(10, c)).ok === false);
+  s.computeRoadAccess(); s.computeCommute();
+  check('Linie aktiv', s.lines[0].active === true);
+  check('U-Bahn verbindet: Wohnzone erreicht Jobs', s.connectedOk(rz, S_RZONE) === true);
+  check('U-Bahn verbindet: Industrie erreicht Einwohner', s.connectedOk(iz, S_IZONE) === true);
+  const distViaSub = s.commuteDist[rz];
+  check('Arbeitsweg über U-Bahn endlich (' + distViaSub + ')', distViaSub > 0);
+  check('Fahrgäste gezählt (' + s.lines[0].riders + ')', s.lines[0].riders > 0);
+  // Serialisierung
+  const s2 = Sim.load(s.serialize());
+  check('Linie überlebt Save/Load', s2.lines.length === 1 && s2.lines[0].stops.length === 2);
+  check('Linie nach Laden aktiv', s2.lines[0].active === true);
+  // Station abreißen → Linie heilt sich / wird inaktiv
+  s.bulldoze(44, c - 1);
+  s.computeCommute();
+  check('Abriss entfernt Stopp aus Linie', s.lines[0].stops.length === 1);
+  check('Linie mit 1 Stopp inaktiv', s.lines[0].active === false);
+}
+
+section('ÖPNV: Bus-Linie nimmt Autos von der Straße');
+{
+  const build = (withBus) => {
+    const s = new Sim(64, 64, 4242);
+    s.money = 200000;
+    s.pop = BAL.GROWTH.SMALL_TOWN_POP + 1;
+    const c = 32;
+    for (let x = 8; x <= 56; x++) { s.terr[s.idx(x, c)] = 0; s.terr[s.idx(x, c - 1)] = 0; }
+    for (let x = 10; x <= 54; x++) s.place(S_ROAD, x, c);
+    for (let x = 11; x <= 15; x++) { s.place(S_RZONE, x, c - 1); s.lvl[s.idx(x, c - 1)] = 3; }
+    for (let x = 49; x <= 53; x++) { s.place(S_IZONE, x, c - 1); s.lvl[s.idx(x, c - 1)] = 3; }
+    if (withBus) {
+      s.place(S_BUSSTOP, 13, c - 2);
+      s.place(S_BUSSTOP, 51, c - 2);
+      const L = s.createLine('bus');
+      s.addStop(L.id, s.idx(13, c - 2));
+      s.addStop(L.id, s.idx(51, c - 2));
+    }
+    s.computeRoadAccess(); s.computeCommute();
+    let mid = 0;
+    for (let x = 25; x <= 40; x++) mid += s.traffic[s.idx(x, c)];
+    return { s, mid };
+  };
+  const noBus = build(false);
+  const withBus = build(true);
+  check('Bus-Linie aktiv', withBus.s.lines[0].active === true);
+  check('Bus-Pfad folgt der Straße (' + (withBus.s.lines[0].paths[0] || []).length + ' Felder)',
+    (withBus.s.lines[0].paths[0] || []).length > 30);
+  check('Verkehr auf der Strecke sinkt (' + noBus.mid + ' → ' + withBus.mid + ')',
+    withBus.mid < noBus.mid);
+  check('Fahrgäste im Bus (' + withBus.s.lines[0].riders + ')', withBus.s.lines[0].riders > 0);
+  // Budget: ÖPNV taucht auf
+  withBus.s.computeStats();
+  withBus.s.monthlyBudget();
+  check('Budget weist ÖPNV-Betrieb aus', withBus.s.lastBudget.transit > 0);
 }
 
 section('Stadtname & Cheat-Flag im Spielstand');

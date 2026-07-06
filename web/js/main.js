@@ -71,6 +71,9 @@
     { id: 'road',     key: '3', mode: 'line', s: S_ROAD },
     { id: 'rail',     mode: 'line', s: S_RAIL },
     { id: 'wire',     key: '4', mode: 'line', s: S_WIRE },
+    { id: 'busstop',  mode: 'single', s: S_BUSSTOP },
+    { id: 'trainstation', mode: 'single', s: S_TRAINSTATION },
+    { id: 'subway',   mode: 'single', s: S_SUBWAY },
     { id: 'rz',       key: '5', mode: 'rect', s: S_RZONE },
     { id: 'cz',       key: '6', mode: 'rect', s: S_CZONE },
     { id: 'iz',       key: '7', mode: 'rect', s: S_IZONE },
@@ -103,6 +106,9 @@
       case 'wind': return Sprites.get('wind', frame || 0);
       case 'coal': return Sprites.store.coal;
       case 'solar': return Sprites.store.solar;
+      case 'busstop': return Sprites.store.busstop;
+      case 'trainstation': return Sprites.store.trainstation;
+      case 'subway': return Sprites.store.subway;
       case 'wtower': return Sprites.store.wtower;
       case 'pump': return Sprites.store.pump;
       case 'park': return Sprites.store.park;
@@ -545,6 +551,107 @@
     }
   }
 
+  // ============================================================
+  // LINIENVERWALTUNG (Bus / Zug / U-Bahn)
+  // ============================================================
+  let transitPick = null;          // Linien-ID im Stopp-Klick-Modus
+  const TYPE_ICON = { bus: '🚌', train: '🚆', sub: '🚇' };
+
+  function lineName(L) { return L.name || (t('tr.line') + ' ' + L.id); }
+
+  function openTransit() {
+    if (!sim) return;
+    $('transitPanel').classList.toggle('hidden');
+    renderLines();
+    Sound.sfx.click();
+  }
+
+  function startPicking(lineId) {
+    const L = sim.lines.find(l => l.id === lineId);
+    if (!L) return;
+    transitPick = lineId;
+    $('transitPanel').classList.remove('hidden');
+    $('transitPickBar').classList.remove('hidden');
+    $('transitPickText').textContent = t('tr.picking', { what: t(DEFS[Sim.stopTypeFor(L.type)].name) });
+    selectTool('point');
+    renderLines();
+  }
+  function endPicking() {
+    transitPick = null;
+    $('transitPickBar').classList.add('hidden');
+    renderLines();
+  }
+  $('btnPickDone').addEventListener('click', () => { endPicking(); Sound.sfx.click(); });
+
+  function newLine(type) {
+    if (!sim) return;
+    const stopType = Sim.stopTypeFor(type);
+    let hasStops = false;
+    for (let i = 0; i < sim.w * sim.h; i++) if (sim.st[i] === stopType) { hasStops = true; break; }
+    if (!hasStops) toast(t('tr.needStops'));
+    const L = sim.createLine(type);
+    startPicking(L.id);
+    Sound.sfx.place();
+  }
+  $('btnNewBus').addEventListener('click', () => newLine('bus'));
+  $('btnNewTrain').addEventListener('click', () => newLine('train'));
+  $('btnNewSub').addEventListener('click', () => newLine('sub'));
+  $('btnTransit').addEventListener('click', openTransit);
+
+  function renderLines() {
+    if (!sim) return;
+    const list = $('lineList');
+    list.innerHTML = '';
+    sim.lines.forEach(L => {
+      const row = document.createElement('div');
+      row.className = 'lineRow' + (transitPick === L.id ? ' picking' : '');
+      const head = document.createElement('div');
+      head.className = 'lineHead';
+      head.innerHTML = '<span class="chip" style="background:' + L.color + '"></span>' +
+        '<span class="lineName">' + TYPE_ICON[L.type] + ' ' + lineName(L) + '</span>';
+      head.title = t('tr.rename');
+      head.addEventListener('click', () => {
+        const nn = prompt(t('tr.rename'), lineName(L));
+        if (nn) { L.name = nn.slice(0, 20); renderLines(); }
+      });
+      row.appendChild(head);
+      const meta = document.createElement('div');
+      meta.className = 'lineMeta';
+      meta.textContent = t('tr.stops', { n: L.stops.length }) + ' · ' + t('tr.riders', { n: L.riders || 0 });
+      row.appendChild(meta);
+      if (L.active === false) {
+        const warn = document.createElement('div');
+        warn.className = 'lineWarn';
+        warn.textContent = t('tr.inactive');
+        row.appendChild(warn);
+      }
+      const btns = document.createElement('div');
+      btns.className = 'lineBtns';
+      const add = document.createElement('button');
+      add.className = 'btn'; add.textContent = t('tr.addStop');
+      add.addEventListener('click', () => startPicking(L.id));
+      const undo = document.createElement('button');
+      undo.className = 'btn'; undo.textContent = t('tr.undoStop');
+      undo.addEventListener('click', () => { sim.removeLastStop(L.id); sim.computeCommute(); renderLines(); });
+      const del = document.createElement('button');
+      del.className = 'btn'; del.textContent = t('tr.delete');
+      del.addEventListener('click', () => {
+        if (!confirm(t('tr.delConfirm', { name: lineName(L) }))) return;
+        if (transitPick === L.id) endPicking();
+        sim.deleteLine(L.id);
+        sim.computeCommute();
+        renderLines();
+        Sound.sfx.dozer();
+      });
+      btns.append(add, undo, del);
+      row.appendChild(btns);
+      list.appendChild(row);
+    });
+  }
+  setInterval(() => {
+    if (sim && !$('transitPanel').classList.contains('hidden') && !transitPick) renderLines();
+  }, 2500);
+
   // ---------- Touch-Bestätigung ----------
   function clearPendingTap() {
     pendingTap = null;
@@ -573,6 +680,21 @@
     }
     if (e.button !== 0 || !sim) return;
     const p = screenToTile(e.clientX, e.clientY);
+    // Stopp-Klick-Modus der Linienverwaltung
+    if (transitPick !== null && sim.inMap(p.x, p.y)) {
+      const L = sim.lines.find(l => l.id === transitPick);
+      const r = sim.addStop(transitPick, sim.idx(p.x, p.y));
+      if (r.ok) {
+        sim.computeCommute();
+        toast(t('tr.stopAdded', { n: L.stops.length, name: lineName(L) }));
+        Sound.sfx.place();
+        renderLines();
+      } else if (r.reason !== 'err.dupStop') {
+        toast('❌ ' + t(r.reason), 'bad');
+        Sound.sfx.error();
+      }
+      return;
+    }
     const tl = toolById[tool];
     if (tl.mode === 'point') {
       // Erst prüfen, ob ein Auto angeklickt wurde (wer fährt da?)
@@ -703,7 +825,11 @@
       if (speed === 0) setSpeed(prevSpeed || 1); else { prevSpeed = speed; setSpeed(0); }
       return;
     }
-    if (e.key === 'Escape') { selectTool('point'); return; }
+    if (e.key === 'Escape') {
+      if (transitPick !== null) { endPicking(); return; }
+      selectTool('point');
+      return;
+    }
     if (e.key === '+') { cam.zoom = Math.min(4, cam.zoom + 1); clampCam(); return; }
     if (e.key === '-') { cam.zoom = Math.max(1, cam.zoom - 1); clampCam(); return; }
     const pan = 24 / cam.zoom * 4;
@@ -831,7 +957,7 @@
     $('rciR').style.height = Math.max(0, sim.demandR) * 100 + '%';
     $('rciC').style.height = Math.max(0, sim.demandC) * 100 + '%';
     $('rciI').style.height = Math.max(0, sim.demandI) * 100 + '%';
-    for (const id of ['stadium', 'townhall', 'monument', 'casino']) {
+    for (const id of ['stadium', 'townhall', 'monument', 'casino', 'subway']) {
       const el = $('tool_' + id);
       const def = DEFS[toolById[id].s];
       if (el) el.classList.toggle('locked', sim.pop < def.minPop);
@@ -918,6 +1044,146 @@
       }
       return true;
     });
+    // Sobald echte Zug-Linien fahren, verschwindet der Zufalls-Zug
+    if (sim.lines.some(l => l.type === 'train' && l.active)) trains = [];
+    updateLineVehicles(dt, spdF);
+  }
+
+  // ---------- Linienfahrzeuge: Busse & Züge pendeln auf ihrer Route ----------
+  const lineVeh = new Map(); // lineId -> {fp:[tiles], vs:[{pos,dir}]}
+  function lineFullPath(L) {
+    if (!L.active || !L.paths || L.type === 'sub') return null;
+    const out = [];
+    for (const p of L.paths) {
+      if (!p) return null;
+      for (const t2 of p) if (!out.length || out[out.length - 1] !== t2) out.push(t2);
+    }
+    return out.length > 1 ? out : null;
+  }
+  function updateLineVehicles(dt, spdF) {
+    const seen = new Set();
+    for (const L of sim.lines) {
+      const fp = lineFullPath(L);
+      if (!fp) continue;
+      seen.add(L.id);
+      let entry = lineVeh.get(L.id);
+      const want = Math.max(1, Math.floor(fp.length / (L.type === 'bus' ? 14 : 24)));
+      if (!entry || entry.fp.length !== fp.length || entry.vs.length !== want) {
+        entry = { fp, vs: Array.from({ length: want }, (_, k) => ({ pos: k * fp.length / want, dir: 1 })) };
+        lineVeh.set(L.id, entry);
+      } else entry.fp = fp;
+      const sp = (L.type === 'bus' ? 2.4 : 3.4) * spdF * dt;
+      for (const v of entry.vs) {
+        v.pos += sp * v.dir;
+        if (v.pos >= fp.length - 1) { v.pos = fp.length - 1; v.dir = -1; }
+        if (v.pos <= 0) { v.pos = 0; v.dir = 1; }
+      }
+    }
+    for (const id of [...lineVeh.keys()]) if (!seen.has(id)) lineVeh.delete(id);
+  }
+
+  function drawLineVehicles(ox, oy, ts, z, isNight) {
+    for (const L of sim.lines) {
+      const entry = lineVeh.get(L.id);
+      if (!entry) continue;
+      for (const v of entry.vs) {
+        const k = Math.min(entry.fp.length - 2, Math.floor(v.pos));
+        const f = v.pos - k;
+        const a = entry.fp[k], b = entry.fp[k + 1];
+        const ax = a % sim.w, ay = (a / sim.w) | 0, bx = b % sim.w, by = (b / sim.w) | 0;
+        const cx = ox + (ax + (bx - ax) * f) * ts + ts / 2;
+        const cy = oy + (ay + (by - ay) * f) * ts + ts / 2;
+        const horiz = ay === by;
+        if (L.type === 'bus') {
+          ctx.fillStyle = '#1a1a29';
+          if (horiz) ctx.fillRect(cx - 4 * z, cy - 2.5 * z, 8 * z, 5 * z);
+          else ctx.fillRect(cx - 2.5 * z, cy - 4 * z, 5 * z, 8 * z);
+          ctx.fillStyle = L.color;
+          if (horiz) ctx.fillRect(cx - 3 * z, cy - 1.5 * z, 6 * z, 3 * z);
+          else ctx.fillRect(cx - 1.5 * z, cy - 3 * z, 3 * z, 6 * z);
+          ctx.fillStyle = isNight ? '#ffe066' : '#c7e8f0';
+          if (horiz) ctx.fillRect(cx - 2 * z, cy - z, 4 * z, z);
+          else ctx.fillRect(cx - z, cy - 2 * z, z, 4 * z);
+        } else {
+          for (let seg = 0; seg < 2; seg++) {
+            const p2 = Math.max(0, v.pos - seg * 1.1);
+            const k2 = Math.min(entry.fp.length - 2, Math.floor(p2));
+            const f2 = p2 - k2;
+            const a2 = entry.fp[k2], b2 = entry.fp[k2 + 1];
+            const sx = ox + ((a2 % sim.w) + ((b2 % sim.w) - (a2 % sim.w)) * f2) * ts + ts / 2;
+            const sy = oy + (((a2 / sim.w) | 0) + (((b2 / sim.w) | 0) - ((a2 / sim.w) | 0)) * f2) * ts + ts / 2;
+            ctx.fillStyle = '#1a1a29';
+            ctx.fillRect(sx - 4 * z, sy - 3 * z, 8 * z, 6 * z);
+            ctx.fillStyle = seg === 0 ? L.color : '#565c6b';
+            ctx.fillRect(sx - 3 * z, sy - 2 * z, 6 * z, 4 * z);
+            if (seg === 0 && isNight) { ctx.fillStyle = '#ffe066'; ctx.fillRect(sx - z, sy - z, 2 * z, 2 * z); }
+          }
+        }
+      }
+    }
+  }
+
+  // ---------- Routen-Overlay (Linien + Stopps, U-Bahn gestrichelt) ----------
+  function drawLineRoutes(ox, oy, ts, z, now) {
+    for (const L of sim.lines) {
+      ctx.globalAlpha = L.active ? 0.85 : 0.35;
+      ctx.strokeStyle = L.color;
+      ctx.lineWidth = Math.max(2, z * 1.5);
+      if (L.type === 'sub') {
+        ctx.setLineDash([4 * z, 3 * z]);
+        for (let k = 0; k + 1 < L.stops.length; k++) {
+          const a = L.stops[k], b = L.stops[k + 1];
+          const ax = ox + (a % sim.w) * ts + ts / 2, ay = oy + ((a / sim.w) | 0) * ts + ts / 2;
+          const bx = ox + (b % sim.w) * ts + ts / 2, by = oy + ((b / sim.w) | 0) * ts + ts / 2;
+          ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+          if (L.active) { // fahrender U-Bahn-Punkt
+            const f = (now / 1400 + k * 0.37) % 1;
+            ctx.fillStyle = L.color;
+            ctx.beginPath();
+            ctx.arc(ax + (bx - ax) * f, ay + (by - ay) * f, Math.max(2, z * 1.6), 0, 7);
+            ctx.fill();
+          }
+        }
+        ctx.setLineDash([]);
+      } else if (L.paths) {
+        for (const p of L.paths) {
+          if (!p || p.length < 2) continue;
+          ctx.beginPath();
+          p.forEach((t2, k) => {
+            const px = ox + (t2 % sim.w) * ts + ts / 2, py = oy + ((t2 / sim.w) | 0) * ts + ts / 2;
+            if (k === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+          });
+          ctx.stroke();
+        }
+      }
+      // Stopps als Kreise mit Nummer
+      L.stops.forEach((si, k) => {
+        const px = ox + (si % sim.w) * ts + ts / 2, py = oy + ((si / sim.w) | 0) * ts + ts / 2;
+        ctx.fillStyle = L.color;
+        ctx.beginPath(); ctx.arc(px, py, Math.max(3, z * 2.4), 0, 7); ctx.fill();
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(px, py, Math.max(3, z * 2.4), 0, 7); ctx.stroke();
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold ' + Math.max(8, 4 * z) + 'px monospace';
+        ctx.fillText(String(k + 1), px - 2 * z * 0.6, py + 2 * z * 0.6);
+      });
+      ctx.globalAlpha = 1;
+    }
+    // Beim Stopp-Klicken: passende Haltestellen pulsierend markieren
+    if (transitPick !== null) {
+      const L = sim.lines.find(l => l.id === transitPick);
+      if (L) {
+        const want = Sim.stopTypeFor(L.type);
+        const pulse = 2 + Math.sin(now / 180) * 1.5;
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        for (let i = 0; i < sim.w * sim.h; i++) {
+          if (sim.st[i] !== want || L.stops.includes(i)) continue;
+          const px = ox + (i % sim.w) * ts, py = oy + ((i / sim.w) | 0) * ts;
+          ctx.strokeRect(px - pulse, py - pulse, ts + pulse * 2, ts + pulse * 2);
+        }
+      }
+    }
   }
 
   // Bildschirmposition eines Autos (für Klick-Treffertest)
@@ -1101,6 +1367,7 @@
             [S_SCHOOL]: 'school', [S_HOSPITAL]: 'hospital',
             [S_WTOWER]: 'wtower', [S_PUMP]: 'pump', [S_TOWNHALL]: 'townhall',
             [S_MONUMENT]: 'monument', [S_CASINO]: 'casino', [S_SOLAR]: 'solar',
+            [S_BUSSTOP]: 'busstop', [S_TRAINSTATION]: 'trainstation', [S_SUBWAY]: 'subway',
           };
           if (map[s]) g.drawImage(S(map[s]), lx, ly);
         }
@@ -1205,6 +1472,7 @@
 
     // 4) Fahrzeuge
     drawVehicles(ox, oy, ts, z, isNight);
+    drawLineVehicles(ox, oy, ts, z, isNight);
 
     // 5) Katastrophen-Akteure
     for (const a of sim.actors) {
@@ -1273,6 +1541,8 @@
         }
       }
     }
+    // Linien-Routen (Overlay „Linien“ oder während des Stopp-Klickens)
+    if (overlay === 'lines' || transitPick !== null) drawLineRoutes(ox, oy, ts, z, now);
 
     // 7) Bau-Vorschau
     const tl = toolById[tool];
@@ -1655,7 +1925,9 @@
       rows.innerHTML =
         '<div><span>' + t('ui.budgetIncome') + '</span><span class="plus">+' + b.income + ' €</span></div>' +
         (b.casino ? '<div><span>' + t('ui.budgetCasino') + '</span><span class="plus">+' + b.casino + ' €</span></div>' : '') +
+        (b.fares ? '<div><span>' + t('ui.budgetFares') + '</span><span class="plus">+' + b.fares + ' €</span></div>' : '') +
         '<div><span>' + t('ui.budgetUpkeep') + '</span><span class="minus">−' + b.upkeep + ' €</span></div>' +
+        (b.transit ? '<div><span>' + t('ui.budgetTransit') + '</span><span class="minus">−' + b.transit + ' €</span></div>' : '') +
         (b.interest ? '<div><span>' + t('ui.budgetInterest') + '</span><span class="minus">−' + b.interest + ' €</span></div>' : '') +
         '<div><span><b>' + t('ui.budgetNet') + '</b></span><span class="' + (b.net >= 0 ? 'plus' : 'minus') + '"><b>' + (b.net >= 0 ? '+' : '') + b.net + ' €</b></span></div>';
     } else {
@@ -1984,6 +2256,10 @@
     sim = simInstance;
     undoStack.length = 0; redoStack.length = 0;
     cars = []; trains = [];
+    lineVeh.clear();
+    transitPick = null;
+    $('transitPanel').classList.add('hidden');
+    $('transitPickBar').classList.add('hidden');
     clearPendingTap();
     initChunks();
     sim.allChanged = true;

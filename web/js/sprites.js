@@ -991,6 +991,66 @@ const Sprites = (() => {
     '................',
   ]);
 
+  // Bus-Haltestelle (H-Schild + Wartehäuschen)
+  const BUSSTOP = art([
+    '................',
+    '.KKK............',
+    '.KyyK...........',
+    '.KyyK...........',
+    '.KKKK.KKKKKKKKK.',
+    '..Kn..KmmmmmmmK.',
+    '..Kn..KccccccmK.',
+    '..Kn..KccccccmK.',
+    '..Kn..KccccccmK.',
+    '..Kn..Kn....nK..',
+    '..Kn..Kn....nK..',
+    '..Kn..Kn....nK..',
+    '..KK..KK....KK..',
+    '.EEEEEEEEEEEEEE.',
+    '................',
+    '................',
+  ]);
+
+  // Bahnhof (Uhr + Bahnsteig)
+  const TRAINSTATION = art([
+    '................',
+    '..KKKKKKKKKKKK..',
+    '.KrrrrrrrrrrrrK.',
+    '.KrrrrrrrrrrrrK.',
+    '.KKKKKKKKKKKKKK.',
+    '.KooooWWWWooooK.',
+    '.KooooWKKWooooK.',
+    '.KooooWWWWooooK.',
+    '.KooooooooooooK.',
+    '.KoqqooKKooqqoK.',
+    '.KoqqooKNooqqoK.',
+    '.KKKKKKKKKKKKKK.',
+    '.KmmmmmmmmmmmmK.',
+    '.KKKKKKKKKKKKKK.',
+    '.EEEEEEEEEEEEEE.',
+    '................',
+  ]);
+
+  // U-Bahn-Eingang (U-Schild + Treppe)
+  const SUBWAY = art([
+    '................',
+    '...KKKKKKK......',
+    '...KbbbbbK......',
+    '...KbWbWbK......',
+    '...KbWbWbK......',
+    '...KbWWWbK......',
+    '...KbbbbbK......',
+    '....KnK.........',
+    '....KnK.........',
+    '..KKKKKKKKKKK...',
+    '..KxxxxxxxxxK...',
+    '..KmxxxxxxxmK...',
+    '..KmmxxxxxmmK...',
+    '..KmmmxxxmmmK...',
+    '..KKKKKKKKKKK...',
+    '.EEEEEEEEEEEEEE.',
+  ]);
+
   // ---------- Berater-Porträts (16x16) ----------
   const SKIN = { H: '#e8b58a', h2: '#c98f66' };
   const ADV_FINANCE = art([
@@ -1118,6 +1178,9 @@ const Sprites = (() => {
     store.wind = [WIND0, WIND1];
     store.coal = COAL;
     store.solar = SOLAR;
+    store.busstop = BUSSTOP;
+    store.trainstation = TRAINSTATION;
+    store.subway = SUBWAY;
     store.stadium = stadiumSprite();
     store.wtower = WTOWER;
     store.pump = PUMP;

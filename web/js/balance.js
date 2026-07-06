@@ -83,6 +83,18 @@
       FIRE_COV_SAFE: 40, FIRE_COV_STOP: 55, FIRE_COV_FAST: 30,
     },
 
+    // ÖPNV: Linien machen Pendelwege kürzer und nehmen Autos von der Straße.
+    // segDiv: je größer, desto "schneller" fühlt sich das Verkehrsmittel an
+    // (Segmentkosten = Weglänge/segDiv + 1), board = Einstiegs-/Wartekosten.
+    TRANSIT: {
+      GATE_RADIUS: 2,          // max. Abstand Stopp → Straße/Schiene
+      MAX_DIST: 1024,          // Obergrenze Pendeldistanz (Bucket-Dijkstra)
+      FARE: 0.03,              // € je Fahrgast und Monat
+      bus:   { board: 2, segDiv: 4, lineUpkeep: 15, stopUpkeep: 2 },
+      train: { board: 3, segDiv: 8, lineUpkeep: 40, stopUpkeep: 4 },
+      sub:   { board: 3, segDiv: 6, lineUpkeep: 60, stopUpkeep: 6 },
+    },
+
     // Epochen: die Zeit verändert das Spiel (Start 1990)
     ERA: {
       SOLAR_YEAR: 1994,       // Solaranlage wird verfügbar

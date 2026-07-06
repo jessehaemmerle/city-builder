@@ -43,6 +43,7 @@
     <option value="power" data-i18n="ui.ovPower"></option>
     <option value="water" data-i18n="ui.ovWater"></option>
     <option value="traffic" data-i18n="ui.ovTraffic"></option>
+    <option value="lines" data-i18n="ui.ovLines"></option>
     <option value="landv" data-i18n="ui.ovLandv"></option>
     <option value="poll" data-i18n="ui.ovPoll"></option>
     <option value="police" data-i18n="ui.ovPolice"></option>
@@ -53,6 +54,7 @@
   </select>
 
   <div class="group">
+    <button class="btn" id="btnTransit">🚏</button>
     <button class="btn" id="btnBbs" title="RETRO-NET BBS">📟</button>
     <button class="btn" id="btnCamera">📸</button>
     <button class="btn" id="btnStats">📈</button>
@@ -69,6 +71,22 @@
 
 <!-- Info-Panel -->
 <div id="infoPanel" class="panel hidden"></div>
+
+<!-- Linienverwaltung (Seitenpanel, bleibt beim Stopp-Klicken offen) -->
+<div id="transitPanel" class="panel hidden">
+  <h3 data-i18n="tr.title"></h3>
+  <div class="row"><span data-i18n="tr.new"></span>
+    <button class="btn" id="btnNewBus" data-i18n="tr.bus"></button>
+    <button class="btn" id="btnNewTrain" data-i18n="tr.train"></button>
+    <button class="btn" id="btnNewSub" data-i18n="tr.sub"></button>
+  </div>
+  <div id="transitPickBar" class="hidden">
+    <span id="transitPickText"></span>
+    <button class="btn" id="btnPickDone" data-i18n="tr.pickDone"></button>
+  </div>
+  <div id="lineList"></div>
+  <p id="transitHint" data-i18n="tr.hint"></p>
+</div>
 
 <!-- Touch-Bestätigung -->
 <div id="touchConfirm" class="panel hidden">

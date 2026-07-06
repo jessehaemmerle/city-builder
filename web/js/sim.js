@@ -15,7 +15,7 @@ const S_NONE = 0, S_ROAD = 1, S_WIRE = 2, S_RZONE = 3, S_CZONE = 4, S_IZONE = 5,
   S_PARK = 6, S_POLICE = 7, S_FIREDEP = 8, S_SCHOOL = 9, S_HOSPITAL = 10,
   S_WIND = 11, S_COAL = 12, S_STADIUM = 13, S_RUBBLE = 14,
   S_RAIL = 15, S_WTOWER = 16, S_PUMP = 17, S_TOWNHALL = 18, S_MONUMENT = 19, S_CASINO = 20,
-  S_SOLAR = 21;
+  S_SOLAR = 21, S_BUSSTOP = 22, S_TRAINSTATION = 23, S_SUBWAY = 24;
 
 // Katalog. name = i18n-Key. Flags: bld, flam, drain, power, waterRange, needsWaterAdj
 const DEFS = {
@@ -40,7 +40,12 @@ const DEFS = {
   [S_MONUMENT]: { name: 'b.monument', cost: 1000, upkeep: 5,    size: 1, bld: 1, minPop: 2500 },
   [S_CASINO]:   { name: 'b.casino',   cost: 2000, upkeep: 0,    size: 1, bld: 1, flam: 1, drain: 4, minPop: 4000, income: 150 },
   [S_SOLAR]:    { name: 'b.solar',    cost: 900,  upkeep: 8,    size: 1, bld: 1, power: 45, minYear: 1994 },
+  [S_BUSSTOP]:      { name: 'b.busstop',      cost: 150,  upkeep: 0, size: 1, bld: 1 },
+  [S_TRAINSTATION]: { name: 'b.trainstation', cost: 800,  upkeep: 0, size: 1, bld: 1, drain: 1 },
+  [S_SUBWAY]:       { name: 'b.subway',       cost: 1200, upkeep: 0, size: 1, bld: 1, drain: 2, minPop: 1000 },
 };
+
+const LINE_COLORS = ['#e5484f', '#4f8fdc', '#41c46a', '#f0d95c', '#b06ce0', '#e08438', '#33c3c1', '#e39ac2'];
 
 const MONTH_KEYS = ['m.jan', 'm.feb', 'm.mar', 'm.apr', 'm.mai', 'm.jun', 'm.jul', 'm.aug', 'm.sep', 'm.okt', 'm.nov', 'm.dez'];
 
@@ -104,6 +109,9 @@ class Sim {
 
     this.workOf = new Int32Array(n).fill(-1);      // Arbeitsweg-Ziel je Wohnhaus
     this.commuteDist = new Int32Array(n).fill(-1); // Pendeldistanz je Wohnhaus
+
+    this.lines = [];          // ÖPNV-Linien {id,type,name,color,stops[]}
+    this.nextLineId = 1;
 
     this.cityName = 'Retropolis';
     this.cheated = false;
@@ -300,6 +308,86 @@ class Sim {
     this.dirtyPower = true; this.dirtyCov = true; this.dirtyCommute = true;
   }
 
+  // ---------- ÖPNV-Linien ----------
+  static stopTypeFor(type) {
+    return type === 'bus' ? S_BUSSTOP : type === 'train' ? S_TRAINSTATION : S_SUBWAY;
+  }
+
+  createLine(type) {
+    if (!BAL.TRANSIT[type]) return null;
+    const line = {
+      id: this.nextLineId++, type, name: null,
+      color: LINE_COLORS[(this.nextLineId - 2) % LINE_COLORS.length],
+      stops: [],
+    };
+    this.lines.push(line);
+    this.dirtyCommute = true;
+    return line;
+  }
+
+  addStop(lineId, i) {
+    const line = this.lines.find(l => l.id === lineId);
+    if (!line) return { ok: false, reason: 'err.unknown' };
+    if (this.st[i] !== Sim.stopTypeFor(line.type)) return { ok: false, reason: 'err.wrongStop' };
+    if (line.stops.includes(i)) return { ok: false, reason: 'err.dupStop' };
+    line.stops.push(i);
+    this.dirtyCommute = true;
+    return { ok: true };
+  }
+
+  removeLastStop(lineId) {
+    const line = this.lines.find(l => l.id === lineId);
+    if (line && line.stops.length) { line.stops.pop(); this.dirtyCommute = true; }
+  }
+
+  deleteLine(lineId) {
+    this.lines = this.lines.filter(l => l.id !== lineId);
+    this.dirtyCommute = true;
+  }
+
+  // Nächstgelegene Netz-Kachel (Straße/Schiene) im Umkreis — als "Tor" eines Stopps
+  nearestNet(i, kind) {
+    const x = i % this.w, y = (i / this.w) | 0;
+    const R = BAL.TRANSIT.GATE_RADIUS;
+    let best = -1, bestD = 99;
+    for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
+      const d = Math.abs(dx) + Math.abs(dy);
+      if (d >= bestD) continue;
+      const nx = x + dx, ny = y + dy;
+      if (!this.inMap(nx, ny)) continue;
+      const j = this.idx(nx, ny);
+      const s = this.st[j];
+      const okKind = kind === 0 ? this.isNet(s) : s === kind;
+      if (okKind) { best = j; bestD = d; }
+    }
+    return best;
+  }
+
+  // Kürzester Pfad zwischen zwei Netz-Kacheln über einen Kacheltyp (Bus: Straße, Zug: Schiene)
+  netPath(a, b, kind) {
+    if (a < 0 || b < 0) return null;
+    if (a === b) return [a];
+    const { w, h } = this;
+    const prev = new Int32Array(w * h).fill(-2);
+    const queue = new Int32Array(w * h);
+    let head = 0, tail = 0;
+    queue[tail++] = a; prev[a] = -1;
+    while (head < tail) {
+      const cur = queue[head++];
+      if (cur === b) break;
+      const x = cur % w, y = (cur / w) | 0;
+      for (const [nx, ny] of [[x, y - 1], [x + 1, y], [x, y + 1], [x - 1, y]]) {
+        if (!this.inMap(nx, ny)) continue;
+        const j = this.idx(nx, ny);
+        if (prev[j] === -2 && this.st[j] === kind) { prev[j] = cur; queue[tail++] = j; }
+      }
+    }
+    if (prev[b] === -2) return null;
+    const path = [];
+    for (let cur = b; cur !== -1; cur = prev[cur]) path.push(cur);
+    return path.reverse();
+  }
+
   // ---------- Kredite ----------
   takeLoan() {
     this.debt += BAL.MONEY.LOAN_STEP;
@@ -410,9 +498,56 @@ class Sim {
       }
       nc++;
     }
-    // 2) Bevölkerung/Jobs pro Komponente
-    this.compPop = new Array(nc).fill(0);
-    this.compJobs = new Array(nc).fill(0);
+    // 2) ÖPNV-Linien vorbereiten: Selbstheilung, Tore, Segmentpfade, Fahrkosten
+    const T = BAL.TRANSIT;
+    for (const L of this.lines)
+      L.stops = L.stops.filter(si => this.st[si] === Sim.stopTypeFor(L.type));
+    this.lines = this.lines.filter(L => L.stops.length > 0);
+    for (const L of this.lines) {
+      const cfg = T[L.type];
+      const gateKind = L.type === 'bus' ? S_ROAD : L.type === 'train' ? S_RAIL : 0;
+      L.gates = L.stops.map(si => this.nearestNet(si, gateKind));
+      L.paths = [];   // Fahrweg je Segment (U-Bahn: null = Tunnel)
+      L.cum = [0];    // kumulierte Fahrkosten bis Stopp k
+      L.riders = 0;
+      L.active = L.stops.length >= 2 && L.gates.every(g => g >= 0);
+      for (let k = 0; k + 1 < L.stops.length && L.active; k++) {
+        let segLen, path = null;
+        if (L.type === 'sub') {
+          const a = L.stops[k], b = L.stops[k + 1];
+          segLen = Math.abs(a % w - b % w) + Math.abs(((a / w) | 0) - ((b / w) | 0));
+        } else {
+          path = this.netPath(L.gates[k], L.gates[k + 1], L.type === 'bus' ? S_ROAD : S_RAIL);
+          if (!path) { L.active = false; break; }
+          segLen = path.length;
+        }
+        L.paths.push(path);
+        L.cum.push(L.cum[k] + Math.ceil(segLen / cfg.segDiv) + 1);
+      }
+    }
+    // Tor → Linienstopps (für die Umsteige-Kanten im Dijkstra)
+    const gateMap = new Map();
+    for (const L of this.lines) {
+      if (!L.active) continue;
+      L.gates.forEach((g, k) => {
+        if (!gateMap.has(g)) gateMap.set(g, []);
+        gateMap.get(g).push({ L, k });
+      });
+    }
+
+    // 3) Union-Find: Linien (v. a. U-Bahn) verbinden getrennte Netze
+    const root = new Int32Array(nc);
+    for (let c = 0; c < nc; c++) root[c] = c;
+    const find = (x) => { while (root[x] !== x) { root[x] = root[root[x]]; x = root[x]; } return x; };
+    for (const L of this.lines) {
+      if (!L.active) continue;
+      for (let k = 0; k + 1 < L.gates.length; k++) {
+        const a = find(this.compId[L.gates[k]]), b = find(this.compId[L.gates[k + 1]]);
+        if (a !== b) root[a] = b;
+      }
+    }
+    // Bevölkerung/Jobs je (verschmolzener) Komponente
+    const rootPop = new Array(nc).fill(0), rootJobs = new Array(nc).fill(0);
     const jobSources = [];
     for (let i = 0; i < n; i++) {
       const s = this.st[i];
@@ -421,33 +556,56 @@ class Sim {
       if (ap < 0) continue;
       const c = this.compId[ap];
       if (c < 0) continue;
-      if (s === S_RZONE) this.compPop[c] += BAL.R_POP[this.lvl[i]];
+      if (s === S_RZONE) rootPop[find(c)] += BAL.R_POP[this.lvl[i]];
       else {
-        this.compJobs[c] += (s === S_CZONE ? BAL.C_JOBS : BAL.I_JOBS)[this.lvl[i]];
+        rootJobs[find(c)] += (s === S_CZONE ? BAL.C_JOBS : BAL.I_JOBS)[this.lvl[i]];
         jobSources.push(ap);
       }
     }
-    // 3) Multi-Source-BFS von allen Arbeitsplätzen über das Netz
+    this.compPop = new Array(nc);
+    this.compJobs = new Array(nc);
+    for (let c = 0; c < nc; c++) { this.compPop[c] = rootPop[find(c)]; this.compJobs[c] = rootJobs[find(c)]; }
+
+    // 4) Bucket-Dijkstra von allen Arbeitsplätzen: Netz-Schritt kostet 1,
+    //    Linien-Hop kostet Einstieg + Fahrzeit (macht ÖPNV kausal attraktiv)
+    const MAXD = T.MAX_DIST;
     const dist = new Int32Array(n).fill(-1);
     const parent = new Int32Array(n).fill(-1);
-    let head = 0, tail = 0;
-    for (const src of jobSources) {
-      if (dist[src] !== 0) { dist[src] = 0; queue[tail++] = src; }
-    }
-    while (head < tail) {
-      const cur = queue[head++];
-      const x = cur % w, y = (cur / w) | 0;
-      for (const [nx, ny] of [[x, y - 1], [x + 1, y], [x, y + 1], [x - 1, y]]) {
-        if (!this.inMap(nx, ny)) continue;
-        const j = this.idx(nx, ny);
-        if (this.isNet(this.st[j]) && dist[j] < 0) {
-          dist[j] = dist[cur] + 1; parent[j] = cur; queue[tail++] = j;
+    const viaLine = new Int32Array(n).fill(-1);
+    const buckets = new Array(MAXD);
+    const push = (v, d2, p, lid) => {
+      if (d2 >= MAXD) return;
+      if (dist[v] >= 0 && dist[v] <= d2) return;
+      dist[v] = d2; parent[v] = p; viaLine[v] = lid;
+      (buckets[d2] || (buckets[d2] = [])).push(v);
+    };
+    for (const src of jobSources) push(src, 0, -1, -1);
+    for (let d = 0; d < MAXD; d++) {
+      const bucket = buckets[d];
+      if (!bucket) continue;
+      for (const u of bucket) {
+        if (dist[u] !== d) continue; // veralteter Eintrag
+        const x = u % w, y = (u / w) | 0;
+        for (const [nx, ny] of [[x, y - 1], [x + 1, y], [x, y + 1], [x - 1, y]]) {
+          if (!this.inMap(nx, ny)) continue;
+          const j = this.idx(nx, ny);
+          if (this.isNet(this.st[j])) push(j, d + 1, u, -1);
+        }
+        const gl = gateMap.get(u);
+        if (gl) for (const { L, k } of gl) {
+          const cfg = T[L.type];
+          for (let j2 = 0; j2 < L.gates.length; j2++) {
+            if (j2 === k) continue;
+            push(L.gates[j2], d + cfg.board + Math.abs(L.cum[j2] - L.cum[k]), u, L.id);
+          }
         }
       }
+      buckets[d] = null;
     }
-    // 4) Pendlerfluss: jede Wohnzone läuft ihren kürzesten Weg zum Job ab
-    //    (Ziel und Distanz werden für die Bürger-Anzeige gemerkt)
+
+    // 5) Pendlerfluss: Weg ablaufen; ÖPNV-Hops erzeugen KEINEN Straßenverkehr
     const flow = new Float32Array(n);
+    const ridersByLine = new Map();
     this.workOf.fill(-1);
     this.commuteDist.fill(-1);
     for (let i = 0; i < n; i++) {
@@ -456,16 +614,24 @@ class Sim {
       if (cur < 0 || dist[cur] < 0) continue;
       this.commuteDist[i] = dist[cur];
       const load = this.lvl[i] * BAL.TRAFFIC.FLOW_PER_LVL;
+      const people = BAL.R_POP[this.lvl[i]];
       let steps = 0;
       while (cur >= 0 && dist[cur] > 0 && steps++ < BAL.TRAFFIC.MAX_PATH) {
-        if (this.st[cur] === S_ROAD) flow[cur] += load; // Schienen schlucken Verkehr
-        cur = parent[cur];
+        const p = parent[cur];
+        if (viaLine[cur] >= 0) {
+          // Fahrt mit der Linie: Fahrgäste zählen, keine Autos
+          ridersByLine.set(viaLine[cur], (ridersByLine.get(viaLine[cur]) || 0) + people);
+        } else if (this.st[cur] === S_ROAD) {
+          flow[cur] += load; // Schienen schlucken Verkehr
+        }
+        cur = p;
       }
       if (cur >= 0) {
-        this.workOf[i] = cur; // Zugangsfeld des erreichten Arbeitsplatzes
-        if (this.st[cur] === S_ROAD) flow[cur] += load;
+        this.workOf[i] = cur;
+        if (this.st[cur] === S_ROAD && viaLine[cur] < 0) flow[cur] += load;
       }
     }
+    for (const L of this.lines) L.riders = ridersByLine.get(L.id) || 0;
     for (let i = 0; i < n; i++) this.traffic[i] = Math.min(100, Math.round(flow[i]));
     // 5) Stau-Umfeld vorberechnen (statt teurem trafficNear pro Zone)
     this.jamNear.fill(0);
@@ -863,9 +1029,18 @@ class Sim {
     const income = Math.round((this.pop * BAL.MONEY.TAX_POP + this.jobs * BAL.MONEY.TAX_JOBS) * this.taxRate / BAL.DEMAND.TAX_NEUTRAL);
     const casinoIncome = (this.casinos || 0) * DEFS[S_CASINO].income;
     const interest = Math.round(this.debt * BAL.MONEY.LOAN_RATE);
+    // ÖPNV: Linien-Unterhalt vs. Fahrgeld
+    let transit = 0, fares = 0;
+    for (const L of this.lines) {
+      const cfg = BAL.TRANSIT[L.type];
+      transit += cfg.lineUpkeep + cfg.stopUpkeep * L.stops.length;
+      fares += (L.riders || 0) * BAL.TRANSIT.FARE;
+    }
+    transit = Math.round(transit); fares = Math.round(fares);
     upkeep = Math.round(upkeep);
-    this.money += income + casinoIncome - upkeep - interest;
-    this.lastBudget = { income, casino: casinoIncome, upkeep, interest, net: income + casinoIncome - upkeep - interest };
+    const net = income + casinoIncome + fares - upkeep - interest - transit;
+    this.money += net;
+    this.lastBudget = { income, casino: casinoIncome, fares, upkeep, interest, transit, net };
     if (this.money < 0 && this.lastBudget.net < 0) {
       this.events.push({ type: 'bad', key: 'ev.broke' });
     }
@@ -954,6 +1129,8 @@ class Sim {
       money: this.money, debt: this.debt, taxRate: this.taxRate,
       day: this.day, month: this.month, year: this.year, startYear: this.startYear,
       cityName: this.cityName, cheated: this.cheated,
+      lines: this.lines.map(L => ({ id: L.id, type: L.type, name: L.name, color: L.color, stops: L.stops })),
+      nextLineId: this.nextLineId,
       disasters: this.disasters, sandbox: this.sandbox,
       milestones: this.milestones, lastBudget: this.lastBudget,
       actors: this.actors, history: this.history, advCd: this.advCd,
@@ -986,6 +1163,8 @@ class Sim {
     s.startYear = d.startYear || 1990;
     s.cityName = d.cityName || 'Retropolis';
     s.cheated = !!d.cheated;
+    s.lines = d.lines || [];
+    s.nextLineId = d.nextLineId || 1;
     s.disasters = d.disasters !== false;
     s.sandbox = !!d.sandbox;
     s.milestones = d.milestones || {};
@@ -1024,5 +1203,6 @@ if (typeof module !== 'undefined' && module.exports) {
     S_NONE, S_ROAD, S_WIRE, S_RZONE, S_CZONE, S_IZONE, S_PARK, S_POLICE,
     S_FIREDEP, S_SCHOOL, S_HOSPITAL, S_WIND, S_COAL, S_STADIUM, S_RUBBLE,
     S_RAIL, S_WTOWER, S_PUMP, S_TOWNHALL, S_MONUMENT, S_CASINO, S_SOLAR,
+    S_BUSSTOP, S_TRAINSTATION, S_SUBWAY,
   };
 }

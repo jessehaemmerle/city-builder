@@ -74,6 +74,15 @@ bring deine Stadt vom Dorf zur Metropole.
   mit ✓/✗ (Strom, Anbindung, Netzverbindung, Nachfrage, Wasser, Umwelt, Stau,
   Landwert, Steuern) — nie wieder rätseln, warum nichts wächst.
 - **Brücken**: Straßen, Schienen und Leitungen können Flüsse überqueren (3× Kosten).
+- **🚏 ÖPNV mit Linienverwaltung**: Baue Bus-Haltestellen, Bahnhöfe und
+  U-Bahn-Stationen, lege im Linien-Panel eigene Linien an (benennen, Stopps
+  per Klick auf der Karte hinzufügen, löschen). Busse fahren über Straßen,
+  Züge über Schienen, U-Bahnen graben Tunnel — und verbinden sogar getrennte
+  Stadtteile. Pendler steigen **automatisch** um, wenn die Linie schneller ist
+  (echte Umsteige-Kanten in der Wegfindung): Das nimmt Autos von der Straße,
+  verkürzt Arbeitswege und bringt Fahrgeld ein — gegen Betriebskosten je Linie
+  und Stopp. Busse und Züge pendeln sichtbar auf ihren Routen, das
+  „Linien“-Overlay zeigt das ganze Netz wie einen Liniennetzplan.
 - **Landwert**: Wasserlage, Parks und Sicherheit steigern ihn; Verschmutzung und
   Stau drücken ihn. Hoher Landwert ⇒ Luxus-Gebäudevarianten und schnelleres Wachstum.
 - **Budget & Kredite**: monatliche Steuern minus Unterhalt; bei Ebbe in der Kasse
