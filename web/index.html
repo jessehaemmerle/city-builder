@@ -53,6 +53,7 @@
     <option value="school" data-i18n="ui.ovSchool"></option>
     <option value="health" data-i18n="ui.ovHealth"></option>
     <option value="park" data-i18n="ui.ovPark"></option>
+    <option value="crime" data-i18n="ui.ovCrime"></option>
   </select>
 
   <div class="group">
@@ -100,12 +101,21 @@
 <div id="budgetPanel" class="panel dialog hidden">
   <h2 data-i18n="ui.budget"></h2>
   <div id="budgetRows"></div>
+  <div id="budgetStatus" class="cityStatus"></div>
   <div class="row" id="loanRow">
     <span id="debtLabel"></span>
     <span class="loanBtns">
       <button class="btn" id="btnLoan"></button>
       <button class="btn" id="btnRepay"></button>
     </span>
+  </div>
+  <h3 data-i18n="ui.policies" style="margin:8px 0 2px"></h3>
+  <div id="policyList">
+    <label class="row"><input type="checkbox" id="polSmokeDetect"> <span data-i18n="ui.pol.smokeDetect"></span><small data-i18n="ui.pol.smokeDetectTip"></small></label>
+    <label class="row"><input type="checkbox" id="polRecycle"> <span data-i18n="ui.pol.recycle"></span><small data-i18n="ui.pol.recycleTip"></small></label>
+    <label class="row"><input type="checkbox" id="polProBiz"> <span data-i18n="ui.pol.proBiz"></span><small data-i18n="ui.pol.proBizTip"></small></label>
+    <label class="row"><input type="checkbox" id="polConserve"> <span data-i18n="ui.pol.conserve"></span><small data-i18n="ui.pol.conserveTip"></small></label>
+    <label class="row"><input type="checkbox" id="polCulture"> <span data-i18n="ui.pol.culture"></span><small data-i18n="ui.pol.cultureTip"></small></label>
   </div>
   <label class="row"><span data-i18n="ui.tax"></span>: <b id="taxVal">9%</b>
     <input type="range" id="taxSlider" min="0" max="20" value="9">

@@ -171,6 +171,32 @@ const Sprites = (() => {
     return c;
   }
 
+  // ---------- Autobahn: breite Fahrbahn, weiße Markierung ----------
+  function highwayTile(mask) {
+    const c = cv(TILE, TILE), x = c.getContext('2d'), r = rng(200 + mask);
+    x.fillStyle = '#3b3b45'; x.fillRect(0, 0, TILE, TILE);   // dunkler Asphalt
+    for (let i = 0; i < 10; i++) { x.fillStyle = '#2c2c34'; x.fillRect((r() * TILE) | 0, (r() * TILE) | 0, 1, 1); }
+    const N = mask & 1, E = mask & 2, S = mask & 4, W = mask & 8;
+    // Randstreifen (rot-weiß) an offenen Seiten
+    x.fillStyle = '#b8bcc8';
+    if (!N) x.fillRect(0, 0, 16, 1);
+    if (!S) x.fillRect(0, 15, 16, 1);
+    if (!W) x.fillRect(0, 0, 1, 16);
+    if (!E) x.fillRect(15, 0, 1, 16);
+    // durchgezogene weiße Fahrbahnbegrenzung + gestrichelte Mittellinie
+    x.fillStyle = P.W;
+    if (N || S) {
+      x.fillRect(3, 0, 1, 16); x.fillRect(12, 0, 1, 16);      // äußere Linien
+      for (let y = 1; y < 16; y += 4) x.fillRect(7, y, 2, 2); // Mittelstrich
+    }
+    if (E || W) {
+      x.fillRect(0, 3, 16, 1); x.fillRect(0, 12, 16, 1);
+      for (let px = 1; px < 16; px += 4) x.fillRect(px, 7, 2, 2);
+    }
+    if (mask === 0) { x.fillStyle = P.W; x.fillRect(3, 7, 10, 2); }
+    return c;
+  }
+
   // ---------- Stromleitung: Autotile, transparent (über Terrain) ----------
   function wireTile(mask) {
     const c = cv(TILE, TILE), x = c.getContext('2d');
@@ -378,6 +404,94 @@ const Sprites = (() => {
     x.fillStyle = P.M; x.fillRect(tx, ty - 8, 1, 4);            // Fahnenmast
     x.fillStyle = P.y; x.fillRect(tx + 1, ty - 8, 3, 2);        // Wimpel
     // Schatten
+    x.fillStyle = 'rgba(0,0,0,0.25)'; x.fillRect(0, 31, 32, 1);
+    return c;
+  }
+
+  // ---------- Deponie 32x32 (Müllhügel hinter Erdwall) ----------
+  function landfillSprite() {
+    const c = cv(32, 32), x = c.getContext('2d'), r = rng(4242);
+    x.fillStyle = P.e; x.fillRect(0, 20, 32, 12);               // Rasen
+    x.fillStyle = P.s; x.fillRect(0, 24, 32, 8);                // Erd-/Sandfläche
+    // Müllhügel
+    for (let j = 0; j < 32; j++) for (let i = 0; i < 32; i++) {
+      const dx = (i - 16) / 15, dy = (j - 22) / 10;
+      if (dx * dx + dy * dy > 1 || j < 8) continue;
+      const rr = r();
+      x.fillStyle = rr < 0.3 ? '#7a6a4a' : rr < 0.6 ? '#8a7a55' : '#6a5c40';
+      x.fillRect(i, j, 1, 1);
+    }
+    // bunter Müll (Farbtupfer)
+    const junk = [P.r, P.b, P.y, P.o, P.C, P.W, P.T];
+    for (let k = 0; k < 40; k++) {
+      x.fillStyle = junk[(r() * junk.length) | 0];
+      x.fillRect((r() * 26 + 3) | 0, (r() * 12 + 12) | 0, 1, 1);
+    }
+    // Erdwall vorn + Zaun
+    x.fillStyle = P.N; x.fillRect(0, 28, 32, 4);
+    x.fillStyle = P.M; for (let px = 1; px < 32; px += 4) x.fillRect(px, 25, 1, 4);
+    x.fillStyle = P.m; x.fillRect(0, 25, 32, 1);
+    x.fillStyle = 'rgba(0,0,0,0.25)'; x.fillRect(0, 31, 32, 1);
+    return c;
+  }
+
+  // ---------- Flughafen 32x32 (Terminal, Rollfeld, Flieger) ----------
+  function airportSprite() {
+    const c = cv(32, 32), x = c.getContext('2d');
+    x.fillStyle = '#57575f'; x.fillRect(0, 0, 32, 32);          // Betonvorfeld
+    x.fillStyle = '#4a4a52'; for (let i = 0; i < 32; i += 8) x.fillRect(0, i, 32, 1);
+    // Landebahn (diagonal, weiße Mittelstriche)
+    x.fillStyle = '#33333a'; x.fillRect(2, 20, 28, 8);
+    x.fillStyle = P.W; for (let px = 4; px < 30; px += 6) x.fillRect(px, 23, 3, 1);
+    x.fillStyle = '#c8c840'; x.fillRect(2, 20, 28, 1); x.fillRect(2, 27, 28, 1);
+    // Terminal (oben)
+    x.fillStyle = P.g; x.fillRect(2, 2, 22, 12);
+    x.fillStyle = P.w; x.fillRect(2, 2, 22, 2);
+    x.fillStyle = P.c; for (let px = 4; px < 23; px += 3) x.fillRect(px, 6, 2, 5); // Glasfront
+    x.fillStyle = P.K; x.fillRect(2, 13, 22, 1);
+    // Tower
+    x.fillStyle = P.d; x.fillRect(25, 3, 4, 11);
+    x.fillStyle = P.c; x.fillRect(25, 3, 4, 3);
+    x.fillStyle = P.r; x.fillRect(26, 0, 2, 3);
+    // Flugzeug auf dem Vorfeld
+    x.fillStyle = P.W;
+    x.fillRect(9, 16, 10, 3);                                   // Rumpf
+    x.fillRect(12, 14, 2, 7);                                   // Tragflächen
+    x.fillStyle = P.b; x.fillRect(17, 16, 2, 1);                // Cockpit
+    x.fillStyle = P.g; x.fillRect(8, 15, 2, 2);                 // Leitwerk
+    x.fillStyle = 'rgba(0,0,0,0.25)'; x.fillRect(0, 31, 32, 1);
+    return c;
+  }
+
+  // ---------- Kernkraftwerk 32x32 (2 Kühltürme mit Dampf) ----------
+  function nuclearSprite() {
+    const c = cv(32, 32), x = c.getContext('2d');
+    x.fillStyle = P.e; x.fillRect(0, 22, 32, 10);              // Rasen
+    x.fillStyle = P.A; x.fillRect(0, 26, 32, 6);               // Betonsockel
+    const tower = (cx0) => {
+      // Hyperbolische Kühlturm-Silhouette
+      for (let j = 6; j < 27; j++) {
+        const t = (j - 6) / 21;
+        const halfW = 6 - Math.sin(t * Math.PI) * 2.2;          // Taille in der Mitte
+        for (let i = -Math.round(halfW); i <= Math.round(halfW); i++) {
+          const px = cx0 + i;
+          if (px < 0 || px > 31) continue;
+          const edge = Math.abs(i) >= halfW - 0.6;
+          x.fillStyle = edge ? P.g : (i < 0 ? P.w : P.d);
+          x.fillRect(px, j, 1, 1);
+        }
+      }
+      x.fillStyle = P.D; x.fillRect(cx0 - 6, 6, 13, 1);        // oberer Rand
+      // Dampfwolke
+      x.fillStyle = 'rgba(240,244,255,0.85)';
+      x.fillRect(cx0 - 3, 2, 7, 3); x.fillRect(cx0 - 4, 3, 9, 2);
+      x.fillStyle = 'rgba(240,244,255,0.5)'; x.fillRect(cx0 - 2, 0, 5, 2);
+    };
+    tower(9); tower(23);
+    // Reaktorkuppel in der Mitte
+    x.fillStyle = P.M; x.fillRect(14, 18, 5, 8);
+    x.fillStyle = P.m; x.fillRect(14, 16, 5, 3);
+    x.fillStyle = P.F; x.fillRect(15, 20, 1, 1); x.fillRect(17, 22, 1, 1); // Warnlampen
     x.fillStyle = 'rgba(0,0,0,0.25)'; x.fillRect(0, 31, 32, 1);
     return c;
   }
@@ -1064,6 +1178,46 @@ const Sprites = (() => {
     '................',
   ]);
 
+  // Müllverbrennung: Industriebau mit Schornstein
+  const INCINER = art([
+    '...KK...........',
+    '...KxK..........',
+    '...KgK..........',
+    '...KgK..........',
+    '.KKKKKKKKKKKKKK.',
+    '.KMMMMMMMMMMMMK.',
+    '.KMxxMxxMxxMxMK.',
+    '.KMMMMMMMMMMMMK.',
+    '.KMxxMxxMxxMxMK.',
+    '.KMMMMMMMMMMMMK.',
+    '.KMMWWMMMMWWMMK.',
+    '.KMMWWMMMMWWMMK.',
+    '.KKKKKKKKKKKKKK.',
+    '.KDDDDDDDDDDDDK.',
+    '.EEEEEEEEEEEEEE.',
+    '................',
+  ]);
+
+  // Recyclinghof: grünes Gebäude mit Recycling-Emblem
+  const RECYCLE = art([
+    '................',
+    '.KKKKKKKKKKKKKK.',
+    '.KeeeeeeeeeeeeK.',
+    '.KeeeeWWWWeeeeK.',
+    '.KeeeWllllWeeeK.',
+    '.KeeWllTTllWeeK.',
+    '.KeeWlTTTTlWeeK.',
+    '.KeeeWlTTlWeeeK.',
+    '.KeeeeWWWWeeeeK.',
+    '.KeeeeeeeeeeeeK.',
+    '.KeWWeKKKKeWWeK.',
+    '.KeWWeKNNKeWWeK.',
+    '.KKKKKKKKKKKKKK.',
+    '.EEEEEEEEEEEEEE.',
+    '.tttttttttttttt.',
+    '................',
+  ]);
+
   // Luxus-Wohnturm (hoher Landwert, Stufe 4)
   const R5 = art([
     '....KKKKKKKK....',
@@ -1286,13 +1440,14 @@ const Sprites = (() => {
     store.sand = [sandTile(11), sandTile(12)];
     store.tree = TREE;
     store.rubble = rubbleTile();
-    store.road = []; store.wire = []; store.rail = []; store.pipe = [];
+    store.road = []; store.wire = []; store.rail = []; store.pipe = []; store.highway = [];
     store.bridgeRoad = []; store.bridgeRail = [];
     for (let m = 0; m < 16; m++) {
       store.road[m] = roadTile(m);
       store.wire[m] = wireTile(m);
       store.rail[m] = railTile(m);
       store.pipe[m] = pipeTile(m);
+      store.highway[m] = highwayTile(m);
       store.bridgeRoad[m] = bridgeTile(m, 'road');
       store.bridgeRail[m] = bridgeTile(m, 'rail');
     }
@@ -1324,6 +1479,11 @@ const Sprites = (() => {
     store.casino = CASINO;
     store.hotel = HOTEL;
     store.amuse = amuseSprite();
+    store.landfill = landfillSprite();
+    store.inciner = INCINER;
+    store.recycle = RECYCLE;
+    store.airport = airportSprite();
+    store.nuclear = nuclearSprite();
     store.fire = [fireTile(0), fireTile(1), fireTile(2)];
     store.smoke = [smokeTile(0), smokeTile(1)];
     store.tornado = [TORNADO0, TORNADO1];

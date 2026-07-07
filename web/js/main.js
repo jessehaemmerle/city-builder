@@ -70,6 +70,7 @@
     { id: 'dozer',    key: '2', mode: 'paint', cost: 1 },
     { id: 'road',     key: '3', mode: 'line', s: S_ROAD },
     { id: 'rail',     mode: 'line', s: S_RAIL },
+    { id: 'highway',  mode: 'line', s: S_HIGHWAY },
     { id: 'wire',     key: '4', mode: 'line', s: S_WIRE },
     { id: 'pipe',     mode: 'line', s: S_PIPE },
     { id: 'busstop',  mode: 'single', s: S_BUSSTOP },
@@ -81,9 +82,14 @@
     { id: 'wind',     key: '8', mode: 'single', s: S_WIND },
     { id: 'coal',     key: '9', mode: 'single', s: S_COAL },
     { id: 'solar',    mode: 'single', s: S_SOLAR },
+    { id: 'nuclear',  mode: 'single', s: S_NUCLEAR },
     { id: 'wtower',   mode: 'single', s: S_WTOWER },
     { id: 'pump',     mode: 'single', s: S_PUMP },
+    { id: 'landfill', mode: 'single', s: S_LANDFILL },
+    { id: 'inciner',  mode: 'single', s: S_INCINER },
+    { id: 'recycle',  mode: 'single', s: S_RECYCLE },
     { id: 'port',     mode: 'single', s: S_PORT },
+    { id: 'airport',  mode: 'single', s: S_AIRPORT },
     { id: 'park',     key: '0', mode: 'single', s: S_PARK },
     { id: 'police',   mode: 'single', s: S_POLICE },
     { id: 'firedep',  mode: 'single', s: S_FIREDEP },
@@ -103,6 +109,7 @@
     switch (tl.id) {
       case 'road': return Sprites.get('road', 10);
       case 'rail': return Sprites.get('rail', 10);
+      case 'highway': return Sprites.get('highway', 10);
       case 'wire': return Sprites.get('wire', 10);
       case 'pipe': return Sprites.get('pipe', 10);
       case 'rz': return Sprites.store.zoneR;
@@ -128,6 +135,11 @@
       case 'casino': return Sprites.store.casino;
       case 'hotel': return Sprites.store.hotel;
       case 'amuse': return Sprites.store.amuse;
+      case 'landfill': return Sprites.store.landfill;
+      case 'inciner': return Sprites.store.inciner;
+      case 'recycle': return Sprites.store.recycle;
+      case 'airport': return Sprites.store.airport;
+      case 'nuclear': return Sprites.store.nuclear;
     }
     return null;
   }
@@ -259,9 +271,9 @@
     const face = $('advisorFace');
     const fx = face.getContext('2d');
     fx.clearRect(0, 0, 16, 16);
-    // 'watershort' nutzt Wilmas Porträt; 'tourism' den Kämmerer (Geldthema)
-    const portrait = key === 'watershort' ? 'water' : key === 'tourism' ? 'finance' : key;
-    const spr = Sprites.store.advisors[portrait];
+    // Manche Berater teilen ein Porträt (gleiche Person/Ressort)
+    const PORTRAIT = { watershort: 'water', tourism: 'finance', garbage: 'env', crime: 'fire' };
+    const spr = Sprites.store.advisors[PORTRAIT[key] || key];
     if (spr) fx.drawImage(spr, 0, 0);
     $('advisorName').textContent = t('adv.' + key);
     $('advisorText').textContent = t('advmsg.' + key);
@@ -868,7 +880,7 @@
     let name = t('terr.' + sim.terr[i]), extra = '';
     if (s !== S_NONE) {
       name = t(DEFS[s].name);
-      if ((s === S_ROAD || s === S_RAIL || s === S_WIRE || s === S_PIPE) && sim.terr[i] === T_WATER)
+      if ((s === S_ROAD || s === S_RAIL || s === S_WIRE || s === S_PIPE || s === S_HIGHWAY) && sim.terr[i] === T_WATER)
         name += ' (' + t('ui.bridge') + ')';
       if (s >= S_RZONE && s <= S_IZONE) {
         const lv = sim.lvl[i];
@@ -1369,6 +1381,16 @@
           const bridge = sim.terr[i] === T_WATER;
           const name = bridge ? (s === S_ROAD ? 'bridgeRoad' : 'bridgeRail') : (s === S_ROAD ? 'road' : 'rail');
           g.drawImage(S(name, m), lx, ly);
+        } else if (s === S_HIGHWAY) {
+          if (!inChunk) continue;
+          // Maske aus Netz-Nachbarn (Autobahn/Straße/Schiene)
+          const cond = (j) => { const q = sim.st[j]; return q === S_HIGHWAY || q === S_ROAD || q === S_RAIL; };
+          let m = 0;
+          if (y > 0 && cond(i - sim.w)) m |= 1;
+          if (x < sim.w - 1 && cond(i + 1)) m |= 2;
+          if (y < sim.h - 1 && cond(i + sim.w)) m |= 4;
+          if (x > 0 && cond(i - 1)) m |= 8;
+          g.drawImage(S('highway', m), lx, ly);
         } else if (s === S_WIRE) {
           if (!inChunk) continue;
           const cond = (j) => { const q = sim.st[j]; return q === S_ROAD || q === S_RAIL || q === S_WIRE || sim.isBld(q); };
@@ -1391,9 +1413,13 @@
         } else if (s === S_RUBBLE) {
           if (!inChunk) continue;
           g.drawImage(S('rubble'), lx, ly);
-        } else if (s === S_COAL || s === S_STADIUM || s === S_PORT || s === S_AMUSE) {
-          if (sim.anchor[i] === i) // Anker kann im Randbereich liegen → Überhang zeichnen
-            g.drawImage(S(s === S_COAL ? 'coal' : s === S_STADIUM ? 'stadium' : s === S_PORT ? 'port' : 'amuse'), lx, ly, TILE * 2, TILE * 2);
+        } else if (s === S_COAL || s === S_STADIUM || s === S_PORT || s === S_AMUSE ||
+                   s === S_LANDFILL || s === S_AIRPORT || s === S_NUCLEAR) {
+          if (sim.anchor[i] === i) { // Anker kann im Randbereich liegen → Überhang zeichnen
+            const nm2 = s === S_COAL ? 'coal' : s === S_STADIUM ? 'stadium' : s === S_PORT ? 'port'
+              : s === S_AMUSE ? 'amuse' : s === S_LANDFILL ? 'landfill' : s === S_AIRPORT ? 'airport' : 'nuclear';
+            g.drawImage(S(nm2), lx, ly, TILE * 2, TILE * 2);
+          }
         } else if (s >= S_RZONE && s <= S_IZONE) {
           if (!inChunk) continue;
           const lv = sim.lvl[i];
@@ -1417,7 +1443,7 @@
             [S_WTOWER]: 'wtower', [S_PUMP]: 'pump', [S_TOWNHALL]: 'townhall',
             [S_MONUMENT]: 'monument', [S_CASINO]: 'casino', [S_SOLAR]: 'solar',
             [S_BUSSTOP]: 'busstop', [S_TRAINSTATION]: 'trainstation', [S_SUBWAY]: 'subway',
-            [S_HOTEL]: 'hotel',
+            [S_HOTEL]: 'hotel', [S_INCINER]: 'inciner', [S_RECYCLE]: 'recycle',
           };
           if (map[s]) g.drawImage(S(map[s]), lx, ly);
         }
@@ -1592,9 +1618,15 @@
           } else if (overlay === 'water') {
             // Netzansicht wie beim Strom: leitende Kacheln versorgt/trocken
             const s = sim.st[i];
-            if (s === S_PIPE || s === S_ROAD || s === S_RAIL || sim.isBld(s)) {
+            if (s === S_PIPE || s === S_ROAD || s === S_RAIL || s === S_HIGHWAY || sim.isBld(s)) {
               if (sim.watered[i]) col = 'rgba(60,170,255,0.40)';
               else { col = 'rgba(255,60,60,0.50)'; hatch = true; }
+            }
+          } else if (overlay === 'crime') {
+            const cv = sim.crime[i];
+            if (cv > 4) {
+              col = 'rgba(120,40,200,' + Math.min(0.6, cv / 130 + 0.12) + ')';
+              if (cv > BAL.CRIME.DECAY_AT) hatch = true;
             }
           } else {
             const m = { police: sim.covPolice, fire: sim.covFire, school: sim.covSchool, health: sim.covHealth, park: sim.covPark }[overlay];
@@ -1692,13 +1724,15 @@
     const s = sim.st[i];
     if (s === S_ROAD) col = '#8a8a95';
     else if (s === S_RAIL) col = '#6b6a5a';
+    else if (s === S_HIGHWAY) col = '#c8ccd8';
     else if (s === S_WIRE) col = '#6b5636';
     else if (s === S_PIPE) col = '#2f7fa8';
     else if (s === S_RZONE) col = sim.lvl[i] ? '#6fe06f' : '#3f9f4f';
     else if (s === S_CZONE) col = sim.lvl[i] ? '#6fb8ff' : '#3f6fbf';
     else if (s === S_IZONE) col = sim.lvl[i] ? '#f0d95c' : '#af9f3c';
-    else if (s === S_COAL || s === S_WIND || s === S_SOLAR) col = '#ff9e2c';
-    else if (s === S_HOTEL || s === S_AMUSE) col = '#e5679f';
+    else if (s === S_COAL || s === S_WIND || s === S_SOLAR || s === S_NUCLEAR) col = '#ff9e2c';
+    else if (s === S_HOTEL || s === S_AMUSE || s === S_AIRPORT) col = '#e5679f';
+    else if (s === S_LANDFILL || s === S_INCINER || s === S_RECYCLE) col = '#7a6a4a';
     else if (s === S_RUBBLE) col = '#6b6257';
     else if (s !== S_NONE) col = '#f2f2ef';
     if (sim.burn[i] > 0 || sim.floodT[i] > 0) col = sim.burn[i] ? '#ff3030' : '#40a0ff';
@@ -2004,10 +2038,18 @@
         '<div><span>' + t('ui.budgetUpkeep') + '</span><span class="minus">−' + b.upkeep + ' €</span></div>' +
         (b.transit ? '<div><span>' + t('ui.budgetTransit') + '</span><span class="minus">−' + b.transit + ' €</span></div>' : '') +
         (b.interest ? '<div><span>' + t('ui.budgetInterest') + '</span><span class="minus">−' + b.interest + ' €</span></div>' : '') +
+        (b.policy ? '<div><span>' + t('ui.budgetPolicy') + '</span><span class="minus">−' + b.policy + ' €</span></div>' : '') +
         '<div><span><b>' + t('ui.budgetNet') + '</b></span><span class="' + (b.net >= 0 ? 'plus' : 'minus') + '"><b>' + (b.net >= 0 ? '+' : '') + b.net + ' €</b></span></div>';
     } else {
       rows.innerHTML = '<div><span>' + t('ui.budgetNone') + '</span><span></span></div>';
     }
+    // Stadt-Status: Müll, Kriminalität, Bildung
+    const gcol = sim.garbageOverflow > 0 ? '#ff6b6b' : '#7fe0a0';
+    const ccol = sim.avgCrime > 45 ? '#ff6b6b' : sim.avgCrime > 20 ? '#f0d95c' : '#7fe0a0';
+    $('budgetStatus').innerHTML =
+      '<span>🗑 ' + t('ui.garbageLbl') + ': <b style="color:' + gcol + '">' + sim.garbageProduced + '/' + sim.garbageCap + '</b></span>' +
+      '<span>🚔 ' + t('ui.crimeLbl') + ': <b style="color:' + ccol + '">' + Math.round(sim.avgCrime) + '%</b></span>' +
+      '<span>🎓 ' + t('ui.eduLbl') + ': <b>' + Math.round(sim.eduLevel * 100) + '%</b></span>';
     $('debtLabel').textContent = t('ui.debt', { v: fmtMoney(sim.debt) });
     $('btnRepay').disabled = sim.debt <= 0;
     $('taxSlider').value = sim.taxRate;
@@ -2017,7 +2059,24 @@
     $('chkTouchConfirm').checked = touchConfirmMode;
     $('musicVol').value = Math.round(Sound.musicVol * 100);
     $('sfxVol').value = Math.round(Sound.sfxVol * 100);
+    // Verordnungs-Schalter spiegeln
+    $('polSmokeDetect').checked = sim.policies.smokeDetect;
+    $('polRecycle').checked = sim.policies.recycle;
+    $('polProBiz').checked = sim.policies.proBiz;
+    $('polConserve').checked = sim.policies.conserve;
+    $('polCulture').checked = sim.policies.culture;
   }
+
+  // Verordnungs-Checkboxen → sim.policies (Neuberechnung anstoßen)
+  [['polSmokeDetect', 'smokeDetect'], ['polRecycle', 'recycle'], ['polProBiz', 'proBiz'],
+   ['polConserve', 'conserve'], ['polCulture', 'culture']].forEach(([id, key]) => {
+    $(id).addEventListener('change', (e) => {
+      if (!sim) return;
+      sim.policies[key] = e.target.checked;
+      sim.dirtyPower = true; // Sparmaßnahmen ändern den Bedarf sofort
+      Sound.sfx.click();
+    });
+  });
 
   $('btnMenu').addEventListener('click', () => {
     autosave();

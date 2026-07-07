@@ -163,6 +163,45 @@ function check(name, cond) {
   check('Hotel gebaut (' + tour.hotels + ')', tour.hotels >= 1);
   check('Freizeitpark gebaut 2x2 (' + tour.amuse + ')', tour.amuse === 4);
 
+  // Neue Infrastruktur (Autobahn, Deponie, Kernkraftwerk) baken → Sprites prüfen
+  const infra = await page.evaluate(() => {
+    const s = window.RETRO.sim;
+    s.pop = 1200; s.year = 1997;
+    const c = s.w >> 1;
+    function freeSpot(w, h) {
+      for (let y = c - 22; y < c + 22; y++) for (let x = c - 22; x < c + 22; x++) {
+        let ok = true;
+        for (let dy = 0; dy < h && ok; dy++) for (let dx = 0; dx < w && ok; dx++) {
+          const j = s.idx(x + dx, y + dy);
+          if (s.terr[j] !== 0 || s.st[j] !== 0) ok = false;
+        }
+        if (ok) return { x, y };
+      }
+      return null;
+    }
+    const hw = freeSpot(1, 1); if (hw) { s.place(29, hw.x, hw.y); s.place(29, hw.x + 1, hw.y); }
+    const lf = freeSpot(2, 2); if (lf) s.place(30, lf.x, lf.y);
+    const nk = freeSpot(2, 2); if (nk) s.place(34, nk.x, nk.y);
+    const ap = freeSpot(2, 2); if (ap) s.place(33, ap.x, ap.y);
+    const inc = freeSpot(1, 1); if (inc) s.place(31, inc.x, inc.y);
+    s.year = 1990; // Jahr zurücksetzen (spätere Tests erwarten 1990)
+    const cnt = {};
+    for (let i = 0; i < s.w * s.h; i++) { const v = s.st[i]; if (v >= 29) cnt[v] = (cnt[v] || 0) + 1; }
+    return cnt;
+  });
+  await page.waitForTimeout(400);
+  check('Autobahn/Deponie/Reaktor/Flughafen/Verbrennung gebaut',
+    (infra[29] || 0) >= 2 && (infra[30] || 0) === 4 && (infra[34] || 0) === 4 && (infra[33] || 0) === 4 && (infra[31] || 0) >= 1);
+
+  // Verordnung im Budget-Panel umschalten
+  await page.click('#btnBudget');
+  await page.waitForTimeout(200);
+  await page.click('#polRecycle');
+  const polOn = await page.evaluate(() => window.RETRO.sim.policies.recycle === true);
+  check('Verordnung (Recyclingpflicht) aktivierbar', polOn);
+  await page.click('#btnBudgetClose');
+  await page.waitForTimeout(100);
+
   // Simulation laufen lassen
   await page.click('#spd3');
   await page.waitForTimeout(10000);

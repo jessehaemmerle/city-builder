@@ -16,7 +16,8 @@ const S_NONE = 0, S_ROAD = 1, S_WIRE = 2, S_RZONE = 3, S_CZONE = 4, S_IZONE = 5,
   S_WIND = 11, S_COAL = 12, S_STADIUM = 13, S_RUBBLE = 14,
   S_RAIL = 15, S_WTOWER = 16, S_PUMP = 17, S_TOWNHALL = 18, S_MONUMENT = 19, S_CASINO = 20,
   S_SOLAR = 21, S_BUSSTOP = 22, S_TRAINSTATION = 23, S_SUBWAY = 24, S_PORT = 25, S_PIPE = 26,
-  S_HOTEL = 27, S_AMUSE = 28;
+  S_HOTEL = 27, S_AMUSE = 28, S_HIGHWAY = 29, S_LANDFILL = 30, S_INCINER = 31,
+  S_RECYCLE = 32, S_AIRPORT = 33, S_NUCLEAR = 34;
 
 // Katalog. name = i18n-Key. Flags: bld, flam, drain, power, waterSupply, needsWaterAdj
 const DEFS = {
@@ -49,6 +50,16 @@ const DEFS = {
   // Tourismus-Gebäude: Hotel = Bettenkapazität, Freizeitpark = Attraktion
   [S_HOTEL]:        { name: 'b.hotel',        cost: 700,  upkeep: 12, size: 1, bld: 1, flam: 1, drain: 3, minPop: 200 },
   [S_AMUSE]:        { name: 'b.amuse',        cost: 2500, upkeep: 45, size: 2, bld: 1, flam: 1, drain: 5, minPop: 500 },
+  // Autobahn: Hochleistungsstraße (Netz-Kachel, kein Gebäude)
+  [S_HIGHWAY]:      { name: 'b.highway',      cost: 60,   upkeep: 0.8, size: 1 },
+  // Müllentsorgung
+  [S_LANDFILL]:     { name: 'b.landfill',     cost: 800,  upkeep: 15, size: 2, bld: 1 },
+  [S_INCINER]:      { name: 'b.inciner',      cost: 2000, upkeep: 40, size: 1, bld: 1, drain: 2 },
+  [S_RECYCLE]:      { name: 'b.recycle',      cost: 1500, upkeep: 30, size: 1, bld: 1, drain: 2, minYear: 1996 },
+  // Flughafen: großer Export-/Tourismus-Motor
+  [S_AIRPORT]:      { name: 'b.airport',      cost: 6000, upkeep: 120, size: 2, bld: 1, drain: 4, minPop: 1000, minYear: 1995 },
+  // Kernkraftwerk: viel Strom, Kernschmelze-Risiko
+  [S_NUCLEAR]:      { name: 'b.nuclear',      cost: 8000, upkeep: 200, size: 2, bld: 1, power: 500 },
 };
 
 const LINE_COLORS = ['#e5484f', '#4f8fdc', '#41c46a', '#f0d95c', '#b06ce0', '#e08438', '#33c3c1', '#e39ac2'];
@@ -162,8 +173,14 @@ class Sim {
     this.compExt = [];        // Außenanbindung je Netz-Komponente
     this.exportBase = 0;
     this.extRoadTotal = 0; this.extRailTotal = 0; this.portTotal = 0;
+    this.extHwyTotal = 0; this.airportTotal = 0;
     // Tourismus (abgeleitet in computeStats)
     this.attraction = 0; this.touristCap = 0; this.touristDemand = 0; this.tourists = 0;
+    // Müll, Kriminalität, Bildung, Verordnungen
+    this.crime = new Uint8Array(n);
+    this.garbageProduced = 0; this.garbageCap = 0; this.garbageOverflow = 0;
+    this.avgCrime = 0; this.eduLevel = 0;
+    this.policies = { smokeDetect: false, recycle: false, proBiz: false, conserve: false, culture: false };
 
     this.genTerrain();
   }
@@ -172,8 +189,8 @@ class Sim {
   inMap(x, y) { return x >= 0 && y >= 0 && x < this.w && y < this.h; }
   isAnchor(i) { return this.st[i] !== S_NONE && (this.anchor[i] === i || this.anchor[i] === -1); }
   isBld(s) { return !!(DEFS[s] && DEFS[s].bld); }
-  isNet(s) { return s === S_ROAD || s === S_RAIL; }
-  isPlant(s) { return s === S_WIND || s === S_COAL || s === S_SOLAR; }
+  isNet(s) { return s === S_ROAD || s === S_RAIL || s === S_HIGHWAY; }
+  isPlant(s) { return s === S_WIND || s === S_COAL || s === S_SOLAR || s === S_NUCLEAR; }
   solarPower() { return this.year >= BAL.ERA.SOLAR_UP_YEAR ? BAL.ERA.SOLAR_POWER2 : BAL.ERA.SOLAR_POWER; }
 
   markChanged(i) {
@@ -246,7 +263,7 @@ class Sim {
     const def = DEFS[tool];
     if (!def) return 0;
     let c = def.cost;
-    if ((tool === S_ROAD || tool === S_RAIL || tool === S_WIRE || tool === S_PIPE) &&
+    if ((tool === S_ROAD || tool === S_RAIL || tool === S_WIRE || tool === S_PIPE || tool === S_HIGHWAY) &&
       this.inMap(x, y) && this.terr[this.idx(x, y)] === T_WATER) c *= BAL.MONEY.BRIDGE_FACTOR;
     return c;
   }
@@ -259,7 +276,7 @@ class Sim {
     if (def.minYear && this.year < def.minYear) return { ok: false, reason: 'err.minYear', params: { y: def.minYear } };
     if (tool === S_COAL && this.scenario && this.scenario.noCoal)
       return { ok: false, reason: 'err.noCoal' };
-    const overWater = tool === S_ROAD || tool === S_RAIL || tool === S_WIRE || tool === S_PIPE;
+    const overWater = tool === S_ROAD || tool === S_RAIL || tool === S_WIRE || tool === S_PIPE || tool === S_HIGHWAY;
     for (let dy = 0; dy < size; dy++) for (let dx = 0; dx < size; dx++) {
       const px = x + dx, py = y + dy;
       if (!this.inMap(px, py)) return { ok: false, reason: 'err.outside' };
@@ -476,10 +493,11 @@ class Sim {
       if (s >= S_RZONE && s <= S_IZONE && this.lvl[i] > 0) need += 1 + this.lvl[i];
       if (DEFS[s] && DEFS[s].drain && this.isAnchor(i)) need += DEFS[s].drain;
     }
+    if (this.policies.conserve) need = Math.round(need * BAL.POLICY.conserve.needF);
     this.powerSupply = supply; this.powerNeed = need;
     const conducts = (i) => {
       const s = this.st[i];
-      return s === S_ROAD || s === S_RAIL || s === S_WIRE || this.isBld(s);
+      return s === S_ROAD || s === S_RAIL || s === S_WIRE || s === S_HIGHWAY || this.isBld(s);
     };
     let head = 0;
     while (head < tail) {
@@ -526,10 +544,11 @@ class Sim {
       if (isSource) { queue[tail++] = i; this.watered[i] = 1; }
       if (s >= S_RZONE && s <= S_IZONE && this.lvl[i] > 0) need += Math.ceil((1 + this.lvl[i]) / 2);
     }
+    if (this.policies.conserve) need = Math.round(need * BAL.POLICY.conserve.needF);
     this.waterSupply = supply; this.waterNeed = need;
     const conducts = (i) => {
       const s = this.st[i];
-      return s === S_PIPE || s === S_ROAD || s === S_RAIL || this.isBld(s);
+      return s === S_PIPE || s === S_ROAD || s === S_RAIL || s === S_HIGHWAY || this.isBld(s);
     };
     let head = 0;
     while (head < tail) {
@@ -697,37 +716,47 @@ class Sim {
     //     Industrie-Jobs in Erlöse verwandelt (Abrechnung im Monatsbudget).
     const E = BAL.ECONOMY;
     const extRoadC = new Array(nc).fill(0), extRailC = new Array(nc).fill(0), portC = new Array(nc).fill(0);
+    const extHwyC = new Array(nc).fill(0), airC = new Array(nc).fill(0);
     const border = (i) => {
       const s = this.st[i];
       const c = this.compId[i];
       if (c < 0) return;
       if (s === S_ROAD) extRoadC[find(c)]++;
       else if (s === S_RAIL) extRailC[find(c)]++;
+      else if (s === S_HIGHWAY) extHwyC[find(c)]++;
     };
     for (let x = 0; x < w; x++) { border(this.idx(x, 0)); border(this.idx(x, h - 1)); }
     for (let y = 1; y < h - 1; y++) { border(this.idx(0, y)); border(this.idx(w - 1, y)); }
     for (let i = 0; i < n; i++) {
-      if (this.st[i] === S_PORT && this.isAnchor(i)) {
+      const s = this.st[i];
+      if (s === S_PORT && this.isAnchor(i)) {
         const ap = this.accessPt[i];
         if (ap >= 0 && this.compId[ap] >= 0) portC[find(this.compId[ap])]++;
+      } else if (s === S_AIRPORT && this.isAnchor(i) && this.powered[i]) {
+        const ap = this.accessPt[i];
+        if (ap >= 0 && this.compId[ap] >= 0) airC[find(this.compId[ap])]++;
       }
     }
     this.compExt = new Array(nc);
     this.extRoadTotal = 0; this.extRailTotal = 0; this.portTotal = 0;
+    this.extHwyTotal = 0; this.airportTotal = 0;
     let exportBase = 0;
     for (let c = 0; c < nc; c++) {
       if (find(c) === c) {
         this.extRoadTotal += extRoadC[c];
         this.extRailTotal += extRailC[c];
         this.portTotal += portC[c];
-        const cap = extRoadC[c] * E.CAP_ROAD + extRailC[c] * E.CAP_RAIL + portC[c] * E.CAP_PORT;
+        this.extHwyTotal += extHwyC[c];
+        this.airportTotal += airC[c];
+        const cap = extRoadC[c] * E.CAP_ROAD + extRailC[c] * E.CAP_RAIL + portC[c] * E.CAP_PORT +
+          extHwyC[c] * E.CAP_HIGHWAY + airC[c] * E.CAP_AIR;
         exportBase += Math.min(rootIJobs[c] * E.EXPORT_PER_IJOB, cap);
       }
     }
     this.exportBase = exportBase;
     for (let c = 0; c < nc; c++) {
       const r2 = find(c);
-      this.compExt[c] = extRoadC[r2] + extRailC[r2] + portC[r2];
+      this.compExt[c] = extRoadC[r2] + extRailC[r2] + portC[r2] + extHwyC[r2] + airC[r2];
     }
 
     // 4) Bucket-Dijkstra von allen Arbeitsplätzen: Netz-Schritt kostet 1,
@@ -787,12 +816,17 @@ class Sim {
           ridersByLine.set(viaLine[cur], (ridersByLine.get(viaLine[cur]) || 0) + people);
         } else if (this.st[cur] === S_ROAD) {
           flow[cur] += load; // Schienen schlucken Verkehr
+        } else if (this.st[cur] === S_HIGHWAY) {
+          flow[cur] += load * BAL.TRAFFIC.HIGHWAY_F; // Autobahn: hohe Kapazität, weniger Stau
         }
         cur = p;
       }
       if (cur >= 0) {
         this.workOf[i] = cur;
-        if (this.st[cur] === S_ROAD && viaLine[cur] < 0) flow[cur] += load;
+        if (viaLine[cur] < 0) {
+          if (this.st[cur] === S_ROAD) flow[cur] += load;
+          else if (this.st[cur] === S_HIGHWAY) flow[cur] += load * BAL.TRAFFIC.HIGHWAY_F;
+        }
       }
     }
     for (const L of this.lines) L.riders = ridersByLine.get(L.id) || 0;
@@ -869,11 +903,18 @@ class Sim {
     const E = BAL.ERA;
     const eCarF = this.year >= E.ECAR_YEAR
       ? Math.max(E.ECAR_POLL_MIN, 1 - (this.year - E.ECAR_YEAR) * E.ECAR_POLL_DECAY) : 1;
+    // Bildung macht Industrie sauberer (ab Internet-Zeitalter stärker)
+    const eduCut = this.year >= BAL.EDU.ERA_YEAR ? BAL.EDU.POLL_CUT_ERA : BAL.EDU.POLL_CUT;
+    const izoneCleanF = 1 - this.eduLevel * eduCut;
     for (let i = 0; i < w * h; i++) {
-      if (this.st[i] === S_IZONE) src[i] = B.IZONE_PER_LVL * this.lvl[i];
-      else if (this.st[i] === S_COAL) src[i] = B.COAL;
-      else if (this.st[i] === S_ROAD) src[i] = (B.ROAD_BASE + this.traffic[i] * B.ROAD_TRAFFIC_F) * eCarF;
-      if (this.st[i] === S_PARK || this.terr[i] === T_TREE) src[i] = B.GREEN;
+      const s = this.st[i];
+      if (s === S_IZONE) src[i] = B.IZONE_PER_LVL * this.lvl[i] * izoneCleanF;
+      else if (s === S_COAL) src[i] = B.COAL;
+      else if (s === S_LANDFILL) src[i] = B.LANDFILL;
+      else if (s === S_INCINER) src[i] = B.INCINER;
+      else if (s === S_AIRPORT) src[i] = B.AIRPORT;
+      else if (s === S_ROAD || s === S_HIGHWAY) src[i] = (B.ROAD_BASE + this.traffic[i] * B.ROAD_TRAFFIC_F) * eCarF;
+      if (s === S_PARK || this.terr[i] === T_TREE) src[i] = B.GREEN;
     }
     let cur = src;
     for (let pass = 0; pass < B.PASSES; pass++) {
@@ -905,6 +946,7 @@ class Sim {
       v += this.covPolice[i] * B.POLICE_F;
       v -= this.poll[i] * B.POLL_F;
       v -= this.jamNear[i] * B.JAM_F;
+      v -= this.crime[i] * B.CRIME_F;
       v = Math.max(0, Math.min(100, Math.round(v)));
       // Luxus-Schwelle überschritten? → Sprite ändert sich, Chunk neu zeichnen
       if (this.lvl[i] === 4 && (this.st[i] === S_RZONE || this.st[i] === S_CZONE) &&
@@ -913,17 +955,33 @@ class Sim {
     }
   }
 
-  // ---------- Statistik ----------
-  computeStats() {
-    const B = BAL.HAPPY, D = BAL.DEMAND, AT = BAL.TOURISM.ATTRACT;
-    let pop = 0, cJobs = 0, iJobs = 0, casinos = 0, townhall = false;
-    let hotelBeds = 0, attraction = 0;
-    const n = this.w * this.h;
+  // ---------- Kriminalität ----------
+  // Steigt mit Bebauungsdichte (Zonen-Level), sinkt mit Polizei-Abdeckung.
+  // Wirkt auf Landwert (computeLandValue) und Zufriedenheit (computeStats).
+  computeCrime() {
+    const n = this.w * this.h, C = BAL.CRIME;
     for (let i = 0; i < n; i++) {
       const s = this.st[i];
-      if (s === S_RZONE) pop += BAL.R_POP[this.lvl[i]];
-      else if (s === S_CZONE) cJobs += BAL.C_JOBS[this.lvl[i]];
-      else if (s === S_IZONE) iJobs += BAL.I_JOBS[this.lvl[i]];
+      if (s >= S_RZONE && s <= S_IZONE && this.lvl[i] > 0) {
+        const c = C.PER_LVL * this.lvl[i] - this.covPolice[i] * C.POLICE_K;
+        this.crime[i] = Math.max(0, Math.min(100, Math.round(c)));
+      } else this.crime[i] = 0;
+    }
+  }
+
+  // ---------- Statistik ----------
+  computeStats() {
+    const B = BAL.HAPPY, D = BAL.DEMAND, AT = BAL.TOURISM.ATTRACT, GB = BAL.GARBAGE;
+    let pop = 0, cJobs = 0, iJobs = 0, casinos = 0, townhall = false;
+    let hotelBeds = 0, attraction = 0;
+    let garbage = 0, garbCap = 0, recycleCut = 0;   // Müll: Aufkommen vs. Kapazität
+    let schoolSum = 0, schoolCnt = 0;                // für das Bildungsniveau
+    const n = this.w * this.h;
+    for (let i = 0; i < n; i++) {
+      const s = this.st[i], lv = this.lvl[i];
+      if (s === S_RZONE) { pop += BAL.R_POP[lv]; if (lv > 0) { garbage += GB.PER_R * lv; schoolSum += this.covSchool[i]; schoolCnt++; } }
+      else if (s === S_CZONE) { cJobs += BAL.C_JOBS[lv]; if (lv > 0) garbage += GB.PER_C * lv; }
+      else if (s === S_IZONE) { iJobs += BAL.I_JOBS[lv]; if (lv > 0) { garbage += GB.PER_I * lv; schoolSum += this.covSchool[i]; schoolCnt++; } }
       else if (s === S_CASINO && this.powered[i]) { casinos++; attraction += AT.casino; }
       else if (s === S_TOWNHALL && this.powered[i]) townhall = true;
       else if (s === S_HOTEL && this.powered[i]) hotelBeds += BAL.TOURISM.HOTEL_BEDS;
@@ -931,33 +989,55 @@ class Sim {
       else if (s === S_MONUMENT) attraction += AT.monument;
       else if (s === S_STADIUM && this.powered[i] && this.isAnchor(i)) attraction += AT.stadium;
       else if (s === S_AMUSE && this.powered[i] && this.isAnchor(i)) attraction += AT.amuse;
+      else if (s === S_AIRPORT && this.powered[i] && this.isAnchor(i)) attraction += AT.airport;
+      else if (s === S_LANDFILL && this.isAnchor(i)) garbCap += GB.LANDFILL_CAP;
+      else if (s === S_INCINER && this.powered[i]) garbCap += GB.INCINER_CAP;
+      else if (s === S_RECYCLE && this.powered[i]) recycleCut += GB.RECYCLE_CUT;
     }
-    this.pop = pop; this.cJobs = cJobs; this.iJobs = iJobs;
-    this.jobs = cJobs + iJobs;
+    this.pop = pop; this.cJobs = cJobs;
     this.casinos = casinos;
     this.attraction = attraction; this.touristCap = hotelBeds;
+
+    // Bildungsniveau: geglätteter Ø der Schul-Abdeckung über Wohn-/Industriezonen
+    const targetEdu = schoolCnt > 0 ? (schoolSum / schoolCnt) / 100 : 0;
+    this.eduLevel = Math.max(0, Math.min(1, this.eduLevel + (targetEdu - this.eduLevel) * BAL.EDU.SMOOTH));
+    // Bildung macht Industrie produktiver → mehr Jobs aus demselben Level
+    iJobs = Math.round(iJobs * (1 + this.eduLevel * BAL.EDU.JOB_BONUS));
+    this.iJobs = iJobs;
+    this.jobs = cJobs + iJobs;
+
+    // Müllbilanz: Recyclinghof + Recyclingpflicht senken das Aufkommen
+    let produced = Math.max(0, garbage - recycleCut);
+    if (this.policies.recycle) produced = Math.round(produced * BAL.POLICY.recycle.garbageF);
+    this.garbageProduced = produced;
+    this.garbageCap = garbCap;
+    this.garbageOverflow = Math.max(0, produced - garbCap);
 
     const workers = pop * D.WORKER_SHARE;
     const taxF = Math.max(D.TAX_F_MIN, D.TAX_F_MAX - this.taxRate / D.TAX_F_DIV);
     // Konjunktur schlägt auf die Nachfrage durch (Boom hebt, Rezession drückt)
     const ec = this.econ, EF = BAL.ECONOMY;
+    const bizF = this.policies.proBiz ? BAL.POLICY.proBiz.demandF : 1; // Wirtschaftsförderung
     this.demandR = Math.max(-1, Math.min(1, (this.jobs * D.R_JOBS_F + D.R_BASE - pop) / D.R_DIV * (1 + ec * EF.DEMAND_F_R))) * taxF;
-    this.demandC = Math.max(-1, Math.min(1, (workers * D.C_WORK_F - cJobs) / D.C_DIV * (1 + ec * EF.DEMAND_F_CI))) * taxF;
-    this.demandI = Math.max(-1, Math.min(1, (workers * D.I_WORK_F + D.I_BASE - iJobs) / D.I_DIV * (1 + ec * EF.DEMAND_F_CI))) * taxF;
+    this.demandC = Math.max(-1, Math.min(1, (workers * D.C_WORK_F - cJobs) / D.C_DIV * (1 + ec * EF.DEMAND_F_CI))) * taxF * bizF;
+    this.demandI = Math.max(-1, Math.min(1, (workers * D.I_WORK_F + D.I_BASE - iJobs) / D.I_DIV * (1 + ec * EF.DEMAND_F_CI))) * taxF * bizF;
 
     let happy = B.BASE;
     happy -= Math.max(0, this.taxRate - D.TAX_NEUTRAL) * B.TAX_PENALTY;
     happy += Math.min(B.TAX_BONUS_MAX, Math.max(0, D.TAX_NEUTRAL - this.taxRate));
     if (townhall) happy += B.TOWNHALL;
     if (casinos > 0) happy -= B.CASINO;
+    if (this.policies.conserve) happy -= BAL.POLICY.conserve.happy; // Sparzwang nervt
+    if (this.policies.culture) happy += BAL.POLICY.culture.happy;   // Kulturprogramm
+    this.avgCrime = 0;
     if (pop > 0) {
-      let covP = 0, covS = 0, covH = 0, covG = 0, covW = 0, pol = 0, jam = 0, fire = 0, cnt = 0;
+      let covP = 0, covS = 0, covH = 0, covG = 0, covW = 0, pol = 0, jam = 0, fire = 0, crime = 0, cnt = 0;
       for (let i = 0; i < n; i++) {
         if (this.st[i] === S_RZONE && this.lvl[i] > 0) {
           covP += this.covPolice[i]; covS += this.covSchool[i];
           covH += this.covHealth[i]; covG += this.covPark[i];
           covW += this.covWater[i]; fire += this.covFire[i];
-          pol += this.poll[i]; jam += this.jamNear[i]; cnt++;
+          pol += this.poll[i]; jam += this.jamNear[i]; crime += this.crime[i]; cnt++;
         }
       }
       if (cnt > 0) {
@@ -965,6 +1045,8 @@ class Sim {
           (covH / cnt) * B.COV_HEALTH + (covG / cnt) * B.COV_PARK + (covW / cnt) * B.COV_WATER;
         happy -= (pol / cnt) * B.POLL_F;
         happy -= Math.max(0, jam / cnt - B.JAM_FREE) * B.JAM_F;
+        this.avgCrime = crime / cnt;
+        happy -= this.avgCrime * BAL.CRIME.HAPPY_F;
         this.avgPollR = pol / cnt;
         this.avgFireCovR = fire / cnt;
       }
@@ -972,6 +1054,9 @@ class Sim {
       happy -= unemployment * B.UNEMPLOYED_F;
       if (this.brownout) happy -= B.BROWNOUT;
       if (this.waterShort) happy -= BAL.WATER.SHORT_HAPPY;
+      // Müll-Überlauf drückt die Zufriedenheit (anteilig am Aufkommen)
+      const overFrac = this.garbageProduced > 0 ? this.garbageOverflow / this.garbageProduced : 0;
+      happy -= overFrac * GB.OVERFLOW_HAPPY;
     }
     this.happiness = Math.max(0, Math.min(100, Math.round(happy)));
 
@@ -979,7 +1064,8 @@ class Sim {
     // Nachfrage = Attraktionen × Zufriedenheit × Konjunktur × Außenanbindung.
     // Tatsächliche Touristen sind durch die Hotelbetten begrenzt (Kapazität).
     const TB = BAL.TOURISM;
-    const extConnected = (this.extRoadTotal + this.extRailTotal + this.portTotal) > 0;
+    const extConnected = (this.extRoadTotal + this.extRailTotal + this.portTotal +
+      this.extHwyTotal + this.airportTotal) > 0;
     const happyF = Math.max(0, (this.happiness - TB.HAPPY_MIN) / TB.HAPPY_DIV);
     const econF = 1 + this.econ * TB.ECON_F;
     const extF = extConnected ? TB.EXT_FULL : TB.EXT_LOCAL;
@@ -1017,7 +1103,8 @@ class Sim {
         const maxLvl = this.covWater[i] >= G.WATER_MIN_COV ? 4 : G.WATER_FREE_LVL;
         if (this.rand() < p && this.lvl[i] < maxLvl) { this.lvl[i]++; this.markChanged(i); }
       } else if ((!okInfra && this.lvl[i] > 0 && this.rand() < G.DECAY_NO_INFRA) ||
-                 (demand < G.DEMAND_DECAY_AT && this.lvl[i] > 0 && this.rand() < G.DECAY_DEMAND)) {
+                 (demand < G.DEMAND_DECAY_AT && this.lvl[i] > 0 && this.rand() < G.DECAY_DEMAND) ||
+                 (this.crime[i] > BAL.CRIME.DECAY_AT && this.lvl[i] > 0 && this.rand() < BAL.CRIME.DECAY_P)) {
         this.lvl[i]--; this.markChanged(i);
       }
     }
@@ -1129,6 +1216,22 @@ class Sim {
     this.events.push({ type: 'bad', key: 'ev.flood', params: { hit }, x: cx, y: cy });
   }
 
+  // Kernschmelze: Reaktor zerstören, Umgebung entzünden (schwerer Rückschlag)
+  spawnMeltdown(anchor) {
+    const { w, h } = this;
+    const D = BAL.DISASTER;
+    const ax = anchor % w, ay = (anchor / w) | 0;
+    for (let dy = -D.NUKE_RADIUS; dy <= D.NUKE_RADIUS; dy++) for (let dx = -D.NUKE_RADIUS; dx <= D.NUKE_RADIUS; dx++) {
+      if (Math.abs(dx) + Math.abs(dy) > D.NUKE_RADIUS) continue;
+      const nx = ax + dx, ny = ay + dy;
+      if (!this.inMap(nx, ny)) continue;
+      const i = this.idx(nx, ny);
+      if (DEFS[this.st[i]] && DEFS[this.st[i]].flam && this.rand() < 0.6) this.setBurn(i, D.NUKE_BURN);
+    }
+    this.destroyTile(anchor); // Reaktor selbst zerstört
+    this.events.push({ type: 'bad', key: 'ev.meltdown', x: ax, y: ay });
+  }
+
   spawnUfo() {
     this.actors.push({
       type: 'ufo', x: -2, y: this.rand() * this.h * 0.6 + this.h * 0.2,
@@ -1199,6 +1302,8 @@ class Sim {
     if (this.attraction >= 60 && this.touristCap === 0 &&
       (this.extRoadTotal + this.extRailTotal + this.portTotal) > 0) say('tourism');
     if (this.avgPollR > 32) say('env');
+    if (this.garbageOverflow > 0 && this.pop > 150) say('garbage');
+    if (this.avgCrime > 45 && this.pop > 250) say('crime');
     if (this.pop > 250 && this.avgFireCovR !== undefined && this.avgFireCovR < 22) say('fire');
     if (this.pop > 150) {
       let dry = 0;
@@ -1227,11 +1332,14 @@ class Sim {
   monthlyBudget() {
     const n = this.w * this.h;
     let upkeep = 0;
+    const nukes = [];
     const coalF = this.year >= BAL.ERA.COAL_TAX_YEAR ? BAL.ERA.COAL_UPKEEP_F : 1; // CO₂-Abgabe
     for (let i = 0; i < n; i++) {
       const s = this.st[i];
-      if (s !== S_NONE && DEFS[s] && this.isAnchor(i))
+      if (s !== S_NONE && DEFS[s] && this.isAnchor(i)) {
         upkeep += DEFS[s].upkeep * (s === S_COAL ? coalF : 1);
+        if (s === S_NUCLEAR) nukes.push(i);
+      }
     }
     const income = Math.round((this.pop * BAL.MONEY.TAX_POP + this.jobs * BAL.MONEY.TAX_JOBS) * this.taxRate / BAL.DEMAND.TAX_NEUTRAL);
     const casinoIncome = (this.casinos || 0) * DEFS[S_CASINO].income;
@@ -1249,9 +1357,17 @@ class Sim {
     const ec = this.econ;
     const exportIncome = Math.round((this.exportBase || 0) * (1 + ec * 0.5));
     const tourismIncome = Math.round((this.tourists || 0) * BAL.TOURISM.SPEND);
-    const net = income + casinoIncome + fares + exportIncome + tourismIncome - upkeep - interest - transit;
+    // Verordnungen: monatliche Kosten
+    const PB = BAL.POLICY;
+    let policyCost = 0;
+    if (this.policies.smokeDetect) policyCost += this.pop * PB.smokeDetect.costPop;
+    if (this.policies.recycle) policyCost += this.pop * PB.recycle.costPop;
+    if (this.policies.proBiz) policyCost += PB.proBiz.costFlat + this.jobs * PB.proBiz.costJobs;
+    if (this.policies.culture) policyCost += this.pop * PB.culture.costPop;
+    policyCost = Math.round(policyCost);
+    const net = income + casinoIncome + fares + exportIncome + tourismIncome - upkeep - interest - transit - policyCost;
     this.money += net;
-    this.lastBudget = { income, casino: casinoIncome, fares, export: exportIncome, tourism: tourismIncome, upkeep, interest, transit, net };
+    this.lastBudget = { income, casino: casinoIncome, fares, export: exportIncome, tourism: tourismIncome, upkeep, interest, transit, policy: policyCost, net };
     // Konjunktur-Phasenwechsel melden (deterministisch aus dem Monat)
     const E2 = BAL.ECONOMY;
     const prevEc = this.econAt(this.monthsTotal - 1);
@@ -1297,10 +1413,15 @@ class Sim {
     }
     const D = BAL.DISASTER;
     if (this.disasters && this.pop > D.MIN_POP) {
-      if (this.rand() < D.FIRE_P) this.igniteRandom();
+      const fireF = this.policies.smokeDetect ? BAL.POLICY.smokeDetect.fireF : 1; // Rauchmelderpflicht
+      if (this.rand() < D.FIRE_P * fireF) this.igniteRandom();
       if (this.rand() < D.TORNADO_P) this.spawnTornado();
       if (this.rand() < D.FLOOD_P) this.spawnFlood();
       if (this.year >= this.startYear + D.UFO_FROM_YEAR && this.rand() < D.UFO_P) this.spawnUfo();
+    }
+    // Kernschmelze: seltenes, aber verheerendes Reaktor-Risiko
+    if (this.disasters && nukes.length && this.rand() < D.NUKE_MELT_P * nukes.length) {
+      this.spawnMeltdown(nukes[(this.rand() * nukes.length) | 0]);
     }
     this.checkAdvisors();
     this.checkScenario();
@@ -1319,7 +1440,7 @@ class Sim {
     if (this.dirtyAccess) this.computeRoadAccess(); // nur bei Strukturänderung
     if (this.dirtyCommute || this.day % 7 === 5) this.computeCommute();
     if (this.day % 7 === 0) this.computePollution();
-    if (this.day % 7 === 3) this.computeLandValue();
+    if (this.day % 7 === 3) { this.computeCrime(); this.computeLandValue(); }
     this.growthTick();
     this.fireTick();
     this.actorTick();
@@ -1335,12 +1456,17 @@ class Sim {
 
   // ---------- Speichern / Laden (v4: RLE-komprimiert) ----------
   serialize() {
+    // Bildungsniveau VOR dem Auffrischen sichern: computeStats „nudged“ es je
+    // Aufruf einmal — beim Laden wird derselbe Ausgangswert einmal genudged,
+    // sodass der Zustand bitgenau übereinstimmt.
+    const eduSnapshot = this.eduLevel;
     // Abgeleitete Zustände auffrischen, damit Laden bitgenau denselben
     // Zustand rekonstruiert (Abdeckung/Verkehr werden sonst nur
     // wöchentlich berechnet und wären „veraltet“ relativ zum Ladepfad).
     this.computeRoadAccess();
     this.computeCoverage();
     this.computeCommute();
+    this.computeCrime();
     this.computeLandValue();
     this.computeStats();
     const anchors2 = [];
@@ -1367,6 +1493,7 @@ class Sim {
       milestones: this.milestones, lastBudget: this.lastBudget,
       actors: this.actors, history: this.history, advCd: this.advCd,
       scenario: this.scenario,
+      policies: this.policies, eduLevel: eduSnapshot,
     });
   }
 
@@ -1405,6 +1532,8 @@ class Sim {
     s.history = d.history || [];
     s.advCd = d.advCd || {};
     s.scenario = d.scenario || null;
+    if (d.policies) for (const k in s.policies) s.policies[k] = !!d.policies[k];
+    s.eduLevel = d.eduLevel || 0;
     s.computeWaterNear();
     // Aktive Brand-/Flutlisten aus den Arrays rekonstruieren
     for (let i = 0; i < s.w * s.h; i++) {
@@ -1436,6 +1565,7 @@ class Sim {
     s.computeCommute();
     if (d.v >= 4 && d.rle.poll) rleDecode(d.rle.poll, s.poll);
     else s.computePollution();
+    s.computeCrime();
     s.computeLandValue(); s.computeStats();
     return s;
   }
@@ -1450,5 +1580,6 @@ if (typeof module !== 'undefined' && module.exports) {
     S_FIREDEP, S_SCHOOL, S_HOSPITAL, S_WIND, S_COAL, S_STADIUM, S_RUBBLE,
     S_RAIL, S_WTOWER, S_PUMP, S_TOWNHALL, S_MONUMENT, S_CASINO, S_SOLAR,
     S_BUSSTOP, S_TRAINSTATION, S_SUBWAY, S_PORT, S_PIPE, S_HOTEL, S_AMUSE,
+    S_HIGHWAY, S_LANDFILL, S_INCINER, S_RECYCLE, S_AIRPORT, S_NUCLEAR,
   };
 }

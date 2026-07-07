@@ -7,7 +7,8 @@
 const M = require('./load-sim.js');
 const { Sim, rleEncode, rleDecode } = M;
 const { S_ROAD, S_RAIL, S_WIRE, S_RZONE, S_CZONE, S_IZONE, S_COAL, S_WIND, S_WTOWER, S_PUMP, S_SOLAR,
-  S_BUSSTOP, S_SUBWAY, S_PORT, S_PIPE, S_HOTEL, S_AMUSE, S_PARK, S_NONE, T_WATER } = M;
+  S_BUSSTOP, S_SUBWAY, S_PORT, S_PIPE, S_HOTEL, S_AMUSE, S_PARK, S_POLICE, S_SCHOOL,
+  S_HIGHWAY, S_LANDFILL, S_INCINER, S_RECYCLE, S_AIRPORT, S_NUCLEAR, S_NONE, T_WATER } = M;
 
 let pass = 0, fail = 0;
 function check(name, cond) {
@@ -513,6 +514,194 @@ section('Tourismus (Attraktionen + Hotels als Einnahmestrom)');
   check('Tourismus überlebt Save/Load',
     s2.tourists === ext.tourists && s2.touristCap === ext.touristCap &&
     s2.lastBudget.tourism === ext.lastBudget.tourism);
+}
+
+section('Autobahn (Export-Kapazität + weniger Stau)');
+{
+  // Autobahn am Rand liefert Export-Kapazität wie eine Straße, nur größer
+  const s = new Sim(64, 64, 321);
+  s.money = 300000; s.pop = 1000;
+  const c = 32;
+  for (let x = 0; x <= 20; x++) { s.terr[s.idx(x, c)] = 0; s.terr[s.idx(x, c - 1)] = 0; }
+  for (let x = 0; x <= 15; x++) s.place(S_HIGHWAY, x, c);          // Autobahn bis zum Rand (x=0)
+  s.place(S_IZONE, 8, c - 1); s.lvl[s.idx(8, c - 1)] = 3;
+  s.place(S_RZONE, 12, c - 1); s.lvl[s.idx(12, c - 1)] = 3;
+  s.computeRoadAccess(); s.computeCommute();
+  check('Autobahn zählt als Rand-Anschluss', s.extHwyTotal >= 1);
+  check('Industrie exportiert über die Autobahn', s.extOk(s.idx(8, c - 1)) && s.exportBase > 0);
+
+  // Weniger Stau: gleiche Pendler auf Autobahn vs. Straße
+  const build = (kind) => {
+    const q = new Sim(64, 64, 4242);
+    q.money = 200000; q.pop = BAL.GROWTH.SMALL_TOWN_POP + 1;
+    const cc = 32;
+    for (let x = 8; x <= 56; x++) { q.terr[q.idx(x, cc)] = 0; q.terr[q.idx(x, cc - 1)] = 0; }
+    for (let x = 10; x <= 54; x++) q.place(kind, x, cc);
+    for (let x = 11; x <= 15; x++) { q.place(S_RZONE, x, cc - 1); q.lvl[q.idx(x, cc - 1)] = 3; }
+    for (let x = 49; x <= 53; x++) { q.place(S_IZONE, x, cc - 1); q.lvl[q.idx(x, cc - 1)] = 3; }
+    q.computeRoadAccess(); q.computeCommute();
+    let mid = 0;
+    for (let x = 25; x <= 40; x++) mid += q.traffic[q.idx(x, cc)];
+    return mid;
+  };
+  const roadJam = build(S_ROAD), hwyJam = build(S_HIGHWAY);
+  check('Autobahn hat weniger Stau als Straße (' + roadJam + ' → ' + hwyJam + ')', hwyJam < roadJam);
+}
+
+section('Flughafen (Export + Tourismus-Anreise)');
+{
+  const s = new Sim(64, 64, 1995);
+  s.money = 300000; s.pop = 1200; s.year = 1996;
+  const c = 32;
+  for (let y = c - 2; y <= c + 3; y++) for (let x = 4; x <= 20; x++) s.terr[s.idx(x, y)] = 0;
+  for (let x = 4; x <= 18; x++) s.place(S_ROAD, x, c);              // Straße (KEINE Randverbindung)
+  s.place(S_WIND, 5, c + 1); s.place(S_WIND, 6, c + 1);            // Strom
+  s.place(S_IZONE, 10, c - 1); s.lvl[s.idx(10, c - 1)] = 3;
+  const ap = s.place(S_AIRPORT, 12, c + 1);                        // Flughafen 2x2 an der Straße
+  check('Flughafen gebaut (2x2)', ap.ok && s.st[s.idx(13, c + 2)] === S_AIRPORT);
+  s.computePower(); s.computeRoadAccess(); s.computeCommute();
+  check('Flughafen zählt als Außenanschluss', s.airportTotal >= 1);
+  check('Industrie exportiert über den Flughafen', s.extOk(s.idx(10, c - 1)) && s.exportBase > 0);
+  // minYear-Sperre
+  const y0 = new Sim(48, 48, 1); y0.money = 100000; y0.pop = 1200; y0.year = 1994;
+  for (let yy = 20; yy <= 21; yy++) for (let xx = 20; xx <= 21; xx++) y0.terr[y0.idx(xx, yy)] = 0;
+  const rej = y0.canPlace(S_AIRPORT, 20, 20);
+  check('Flughafen vor 1995 gesperrt', !rej.ok && rej.reason === 'err.minYear');
+}
+
+section('Kernkraftwerk (viel Strom)');
+{
+  const s = new Sim(64, 64, 7); s.money = 300000;
+  const c = 32;
+  for (let y = c - 1; y <= c + 3; y++) for (let x = c - 1; x <= c + 3; x++) s.terr[s.idx(x, y)] = 0;
+  for (let x = c - 1; x <= c + 3; x++) s.place(S_ROAD, x, c);
+  const r = s.place(S_NUCLEAR, c, c + 1);                          // 2x2 an der Straße
+  check('Kernkraftwerk gebaut', r.ok);
+  s.place(S_RZONE, c, c - 1); s.lvl[s.idx(c, c - 1)] = 1;
+  s.computePower();
+  check('Reaktor speist viel Strom ein (' + s.powerSupply + ')', s.powerSupply >= 500);
+  check('Umliegende Zone hat Strom', s.powered[s.idx(c, c - 1)] === 1);
+}
+
+section('Müllentsorgung (Aufkommen vs. Kapazität)');
+{
+  const mk = (opts) => {
+    const o = opts || {};
+    const s = new Sim(64, 64, 909); s.money = 300000; s.year = 1997; // Recyclinghof ab 1996
+    const c = 32;
+    for (let y = c - 2; y <= c + 3; y++) for (let x = 8; x <= 40; x++) s.terr[s.idx(x, y)] = 0;
+    for (let x = 8; x <= 38; x++) s.place(S_ROAD, x, c);
+    s.place(S_COAL, 9, c + 1);                                     // Strom
+    for (let x = 12; x <= 30; x++) { s.place(S_RZONE, x, c - 1); s.lvl[s.idx(x, c - 1)] = 3; }
+    if (o.landfill) s.place(S_LANDFILL, 33, c + 1);
+    if (o.recycle) s.place(S_RECYCLE, 36, c + 1);
+    s.computePower(); s.computeRoadAccess(); s.computeCommute(); s.computeStats();
+    return s;
+  };
+  const none = mk({});
+  check('Zonen produzieren Müll', none.garbageProduced > 0);
+  check('Ohne Entsorgung: Überlauf', none.garbageOverflow > 0 && none.garbageCap === 0);
+  const withLf = mk({ landfill: true });
+  check('Deponie schafft Kapazität', withLf.garbageCap >= BAL.GARBAGE.LANDFILL_CAP);
+  check('Deponie reduziert den Überlauf', withLf.garbageOverflow < none.garbageOverflow);
+  check('Weniger Müll = zufriedener (' + none.happiness + ' → ' + withLf.happiness + ')',
+    withLf.happiness > none.happiness);
+  const withRe = mk({ landfill: true, recycle: true });
+  check('Recyclinghof senkt das Aufkommen', withRe.garbageProduced < withLf.garbageProduced);
+}
+
+section('Kriminalität (Polizei senkt sie, Landwert/Glück leiden)');
+{
+  const s = new Sim(64, 64, 5150); s.money = 300000; s.pop = 400;
+  const c = 32;
+  for (let y = c - 2; y <= c + 2; y++) for (let x = 10; x <= 30; x++) s.terr[s.idx(x, y)] = 0;
+  for (let x = 10; x <= 30; x++) s.place(S_ROAD, x, c);
+  s.place(S_COAL, 11, c + 1);
+  for (let x = 13; x <= 20; x++) { s.place(S_RZONE, x, c - 1); s.lvl[s.idx(x, c - 1)] = 3; }
+  s.computePower(); s.computeCoverage(); s.computeCrime();
+  const crimeNoPolice = s.crime[s.idx(15, c - 1)];
+  check('Ohne Polizei: hohe Kriminalität (' + crimeNoPolice + ')', crimeNoPolice > 40);
+  s.computeLandValue();
+  const lvHigh = s.landv[s.idx(15, c - 1)];
+  // Polizeiwache in die Nähe setzen
+  s.place(S_POLICE, 15, c + 1);
+  s.computePower(); s.computeCoverage(); s.computeCrime(); s.computeLandValue();
+  const crimeWithPolice = s.crime[s.idx(15, c - 1)];
+  check('Polizei senkt die Kriminalität (' + crimeNoPolice + ' → ' + crimeWithPolice + ')', crimeWithPolice < crimeNoPolice);
+  check('Niedrigere Kriminalität hebt den Landwert', s.landv[s.idx(15, c - 1)] > lvHigh);
+}
+
+section('Bildung macht Industrie sauberer & produktiver');
+{
+  const mk = (edu) => {
+    const s = new Sim(48, 48, 202); s.money = 200000;
+    const c = 24;
+    for (let x = c - 6; x <= c + 6; x++) { s.terr[s.idx(x, c)] = 0; s.terr[s.idx(x, c - 1)] = 0; }
+    for (let x = c - 6; x <= c + 6; x++) s.place(S_ROAD, x, c);
+    for (let x = c - 4; x <= c + 4; x++) { s.place(S_IZONE, x, c - 1); s.lvl[s.idx(x, c - 1)] = 3; }
+    s.eduLevel = edu;
+    s.computePollution(); s.computeStats();
+    let poll = 0;
+    for (let x = c - 4; x <= c + 4; x++) poll += s.poll[s.idx(x, c - 1)];
+    return { poll, jobs: s.iJobs };
+  };
+  const dumb = mk(0), smart = mk(1);
+  check('Bildung senkt die Industrie-Verschmutzung (' + dumb.poll + ' → ' + smart.poll + ')', smart.poll < dumb.poll);
+  check('Bildung erhöht die Industrie-Jobs (' + dumb.jobs + ' → ' + smart.jobs + ')', smart.jobs > dumb.jobs);
+  // Bildungsniveau steigt bei Schul-Abdeckung über die Zeit
+  const s = new Sim(48, 48, 5); s.money = 200000;
+  const c = 24;
+  for (let x = c - 6; x <= c + 6; x++) { s.terr[s.idx(x, c)] = 0; s.terr[s.idx(x, c - 1)] = 0; }
+  for (let x = c - 6; x <= c + 6; x++) s.place(S_ROAD, x, c);
+  s.place(S_COAL, c - 6, c + 1);
+  for (let x = c - 4; x <= c + 4; x++) { s.place(S_RZONE, x, c - 1); s.lvl[s.idx(x, c - 1)] = 2; }
+  s.place(S_SCHOOL, c, c + 1);
+  const edu0 = s.eduLevel;
+  for (let t = 0; t < 200; t++) { s.tick(); s.events.length = 0; }
+  check('Bildungsniveau steigt mit Schulen (' + edu0.toFixed(2) + ' → ' + s.eduLevel.toFixed(2) + ')', s.eduLevel > edu0 + 0.05);
+}
+
+section('Verordnungen (stadtweite Schalter)');
+{
+  const s = new Sim(48, 48, 11); s.money = 200000;
+  const c = 24;
+  for (let x = c - 6; x <= c + 6; x++) { s.terr[s.idx(x, c)] = 0; s.terr[s.idx(x, c - 1)] = 0; }
+  for (let x = c - 6; x <= c + 6; x++) s.place(S_ROAD, x, c);
+  s.place(S_COAL, c - 6, c + 1);
+  for (let x = c - 4; x <= c + 4; x++) { s.place(S_RZONE, x, c - 1); s.lvl[s.idx(x, c - 1)] = 2; }
+  s.computePower();
+  const needFull = s.powerNeed;
+  s.policies.conserve = true; s.computePower();
+  check('Sparmaßnahmen senken den Strombedarf (' + needFull + ' → ' + s.powerNeed + ')', s.powerNeed < needFull);
+  // Wirtschaftsförderung hebt die C/I-Nachfrage
+  s.policies.conserve = false;
+  s.computeStats(); const demandC0 = s.demandC;
+  s.policies.proBiz = true; s.computeStats();
+  check('Wirtschaftsförderung hebt die Gewerbe-Nachfrage', s.demandC > demandC0);
+  // Kulturprogramm hebt die Zufriedenheit; Kosten tauchen im Budget auf
+  s.computeStats(); const happy0 = s.happiness;
+  s.policies.culture = true; s.computeStats();
+  check('Kulturprogramm hebt die Zufriedenheit', s.happiness > happy0);
+  s.monthlyBudget();
+  check('Verordnungen kosten im Budget', s.lastBudget.policy > 0);
+}
+
+section('Save/Load: Verordnungen & Bildungsniveau bitgenau');
+{
+  const s = new Sim(64, 64, 4242);
+  s.money = 100000;
+  const c = 32;
+  for (let x = c - 8; x <= c + 8; x++) { s.terr[s.idx(x, c)] = 0; s.terr[s.idx(x, c - 1)] = 0; }
+  for (let x = c - 8; x <= c + 8; x++) s.place(S_ROAD, x, c);
+  s.place(S_COAL, c - 8, c + 1);
+  for (let x = c - 6; x <= c + 6; x++) { s.place(S_RZONE, x, c - 1); s.lvl[s.idx(x, c - 1)] = 2; }
+  s.place(S_SCHOOL, c, c + 1);
+  s.policies.recycle = true; s.policies.culture = true;
+  for (let t = 0; t < 150; t++) { s.tick(); s.events.length = 0; }
+  const s2 = Sim.load(s.serialize());
+  check('Verordnungen überleben Save/Load', s2.policies.recycle === true && s2.policies.culture === true);
+  check('Bildungsniveau überlebt Save/Load', Math.abs(s2.eduLevel - s.eduLevel) < 1e-9);
+  check('Zustands-Hash identisch (bitgenau)', hashSim(s2) === hashSim(s));
 }
 
 section('Stadtname & Cheat-Flag im Spielstand');

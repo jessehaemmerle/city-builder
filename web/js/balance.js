@@ -60,12 +60,14 @@
     POLLUTION: {
       IZONE_PER_LVL: 14, COAL: 55, ROAD_BASE: 2, ROAD_TRAFFIC_F: 0.04,
       GREEN: -6, DIFFUSE_GAIN: 1.35, PASSES: 2,
+      LANDFILL: 22, INCINER: 40, AIRPORT: 34, // Müll/Lärm-Quellen
     },
 
     LANDV: {
       BASE: 35, WATER: 14,
       PARK_F: 0.28, POLICE_F: 0.06,
       POLL_F: 0.5, JAM_F: 0.10,
+      CRIME_F: 0.5,                  // Kriminalität drückt den Landwert
       LUX_MIN: 62,                   // ab hier Luxus-Sprites (Stufe 4)
     },
 
@@ -73,6 +75,46 @@
       FLOW_PER_LVL: 2,               // Pendlerfluss pro Wohn-Level auf dem Weg
       MAX_PATH: 200,                 // Sicherheitslimit Pfadlänge
       JAM_RADIUS: 2,                 // Umkreis für Stau-Wirkung auf Zonen
+      HIGHWAY_F: 0.35,              // Autobahn nimmt Verkehr auf (weniger Stau)
+    },
+
+    // Müllentsorgung: Zonen produzieren Müll, Deponie/Verbrennung/Recycling
+    // schaffen Kapazität. Überlauf → Verschmutzung + Unzufriedenheit.
+    GARBAGE: {
+      PER_R: 2, PER_C: 2, PER_I: 3,  // Müll je Zonen-Level (R/C/I)
+      LANDFILL_CAP: 220,             // Kapazität Deponie (2x2)
+      INCINER_CAP: 420,              // Kapazität Müllverbrennung (mit Strom)
+      RECYCLE_CUT: 260,             // Recyclinghof reduziert die Müllmenge
+      OVERFLOW_HAPPY: 12,            // max. Zufriedenheits-Malus bei Voll-Überlauf
+      RECYCLE_YEAR: 1996,           // Recyclinghof verfügbar ab
+    },
+
+    // Kriminalität: steigt mit Bebauungsdichte, sinkt mit Polizei-Abdeckung
+    CRIME: {
+      PER_LVL: 26,                   // Grundkriminalität je Zonen-Level
+      POLICE_K: 0.9,                 // Wirkung der Polizei-Abdeckung
+      HAPPY_F: 0.14,                 // Zufriedenheits-Malus je Ø-Kriminalität
+      DECAY_AT: 70,                  // ab hier drohen Abwanderung/Verfall
+      DECAY_P: 0.05,                 // Verfallswahrscheinlichkeit darüber
+    },
+
+    // Bildung: dauerhafte Schul-Abdeckung hebt das Bildungsniveau, das die
+    // Industrie sauberer (weniger Smog) und produktiver (mehr Jobs) macht.
+    EDU: {
+      SMOOTH: 0.02,                  // Trägheit der Anpassung pro Stats-Tick
+      POLL_CUT: 0.6,                 // max. Reduktion der Industrie-Verschmutzung
+      POLL_CUT_ERA: 0.85,            // … verstärkt ab dem Internet-Zeitalter
+      ERA_YEAR: 2000,
+      JOB_BONUS: 0.35,               // max. Zusatz-Jobs der Industrie
+    },
+
+    // Verordnungen: stadtweite Schalter mit monatlichen Kosten
+    POLICY: {
+      smokeDetect: { fireF: 0.4, costPop: 0.04 },
+      recycle:     { garbageF: 0.7, costPop: 0.05 },
+      proBiz:      { demandF: 1.15, costFlat: 40, costJobs: 0.05 },
+      conserve:    { needF: 0.85, happy: 2, costPop: 0 },
+      culture:     { happy: 4, costPop: 0.06 },
     },
 
     DISASTER: {
@@ -81,6 +123,8 @@
       UFO_P: 0.012, UFO_FROM_YEAR: 3,   // Jahre nach Spielstart
       FIRE_BURN: 14, FIRE_SPREAD_BURN: 12,
       FIRE_COV_SAFE: 40, FIRE_COV_STOP: 55, FIRE_COV_FAST: 30,
+      NUKE_MELT_P: 0.006,               // Kernschmelze je Reaktor und Monat
+      NUKE_BURN: 20, NUKE_RADIUS: 4,    // Wucht/Radius der Kernschmelze
     },
 
     // ÖPNV: Linien machen Pendelwege kürzer und nehmen Autos von der Straße.
@@ -115,7 +159,7 @@
       EXT_FULL: 1.0,         // mit Außenanbindung: voller Zustrom
       EXT_LOCAL: 0.3,        // ohne Anbindung: nur lokale Ausflügler
       ATTRACT: {             // Anziehungskraft je Attraktion
-        park: 4, stadium: 45, monument: 35, casino: 20, amuse: 70,
+        park: 4, stadium: 45, monument: 35, casino: 20, amuse: 70, airport: 40,
       },
     },
 
@@ -130,6 +174,8 @@
       CAP_ROAD: 80,            // Export-Kapazität je Straßen-Randanschluss
       CAP_RAIL: 250,           // … je Schienen-Randanschluss
       CAP_PORT: 400,           // … je Hafen
+      CAP_HIGHWAY: 200,        // … je Autobahn-Randanschluss
+      CAP_AIR: 650,            // … je Flughafen
       NO_EXPORT_PENALTY: 0.5,  // Industrie-Wachstumsfaktor ohne Außenanbindung
       NO_EXPORT_MIN_POP: 300,  // darunter greift die Strafe nicht
     },
@@ -145,6 +191,7 @@
       ECAR_YEAR: 2000,        // E-Autos: Straßenverschmutzung sinkt jährlich
       ECAR_POLL_DECAY: 0.06,
       ECAR_POLL_MIN: 0.35,
+      AIRPORT_YEAR: 1995,     // Flughafen wird verfügbar
     },
 
     // [Einwohner, Bonus, Ereignis-Key]

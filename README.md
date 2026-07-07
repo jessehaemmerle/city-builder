@@ -81,6 +81,26 @@ bring deine Stadt vom Dorf zur Metropole.
   mit ✓/✗ (Strom, Anbindung, Netzverbindung, Nachfrage, Wasser, Umwelt, Stau,
   Landwert, Steuern) — nie wieder rätseln, warum nichts wächst.
 - **Brücken**: Straßen, Schienen und Leitungen können Flüsse überqueren (3× Kosten).
+- **🛣 Autobahn**: Hochleistungsstraße mit viel höherer Kapazität — nimmt Pendler
+  auf, ohne zu verstopfen (deutlich weniger Stau als eine normale Straße), und
+  liefert am Kartenrand ein Vielfaches an Export-Kapazität.
+- **🗑 Müllentsorgung**: Wohn-, Gewerbe- und Industriezonen produzieren Müll.
+  **Deponie** (Fläche, etwas Geruch) und **Müllverbrennung** (kompakt, mehr Smog)
+  schaffen Entsorgungskapazität, der **Recyclinghof** (ab 1996) senkt das Aufkommen.
+  Türmt sich der Müll (Anzeige `🗑 Aufkommen/Kapazität` im Budget), leidet die
+  Zufriedenheit — analog zu Strom und Wasser ein Kapazitätssystem.
+- **🚔 Kriminalität**: Steigt in dicht bebauten Vierteln mit schlechter
+  Polizei-Abdeckung, drückt Landwert **und** Zufriedenheit und kann ganze Blocks
+  verfallen lassen. Eigenes „Kriminalität“-Overlay; mehr Polizeiwachen wirken direkt.
+- **🎓 Bildung → saubere Industrie**: Dauerhafte Schul-Abdeckung hebt das
+  Bildungsniveau der Stadt. Gebildete Industrie verschmutzt weniger und schafft mehr
+  Jobs (Hi-Tech-Wandel, ab dem Internet-Zeitalter 2000 stärker).
+- **☢️ Kernkraftwerk**: Liefert enorm viel Strom (500) — aber Vorsicht: eine seltene
+  **Kernschmelze** setzt die Umgebung in Brand und zerstört den Reaktor.
+- **📜 Verordnungen**: Stadtweite Schalter im Budget-Panel mit monatlichen Kosten —
+  Rauchmelderpflicht (weniger Brände), Recyclingpflicht (weniger Müll),
+  Wirtschaftsförderung (mehr G/I-Nachfrage), Sparmaßnahmen (weniger Strom-/Wasser­bedarf)
+  und Kulturprogramm (mehr Zufriedenheit).
 - **🚏 ÖPNV mit Linienverwaltung**: Baue Bus-Haltestellen, Bahnhöfe und
   U-Bahn-Stationen, lege im Linien-Panel eigene Linien an (benennen, Stopps
   per Klick auf der Karte hinzufügen, löschen). Busse fahren über Straßen,
@@ -96,15 +116,18 @@ bring deine Stadt vom Dorf zur Metropole.
   Kredite in 5.000-€-Schritten (1,5% Zins/Monat), jederzeit tilgbar.
 - **Katastrophen**: Brände, **Tornados**, **Hochwasser** am Ufer — und
   gelegentlich ein **UFO** 👽 (alles abschaltbar).
-- **Berater**: Fünf Berater-Charaktere mit Pixel-Porträts melden sich bei
-  Geldnot, Stromausfall, Smog, fehlender Feuerwehr oder Wassermangel.
+- **Berater**: Berater-Charaktere mit Pixel-Porträts melden sich bei Geldnot,
+  Stromausfall, Smog, fehlender Feuerwehr, Wasser- oder Müllproblemen,
+  steigender Kriminalität und ungenutztem Tourismus-Potenzial.
 - **Meilensteine**: Boni bei 100 / 500 / 1.500 / 2.500 / 4.000 Einwohnern
   inkl. Freischaltung der Belohnungsgebäude.
 - **Außenwelt & Außenhandel**: Straßen und Schienen, die bis zum Kartenrand
   gebaut werden, verbinden die Stadt mit der Außenwelt (gelbe Pfeil-Marker).
   Industrie **braucht** eine solche Anbindung, um zu exportieren — die
-  Exporterlöse hängen an der Kapazität (Straße < Schiene < **⚓ Hafen** am
-  Wasser) und tauchen als eigene Budget-Zeile auf.
+  Exporterlöse hängen an der Kapazität (Straße < Autobahn < Schiene < **⚓ Hafen**
+  am Wasser < **✈ Flughafen**) und tauchen als eigene Budget-Zeile auf. Der
+  **Flughafen** (ab 1995) ist der stärkste Export- **und** Tourismus-Motor
+  zugleich — bringt aber Fluglärm/Abgase, die den Landwert ringsum drücken.
 - **Tourismus** 🧳: Ein eigener, laufender Einnahmestrom. **Attraktionen**
   (Freizeitpark, Stadion, Denkmal, Casino, Parks) locken Besucher an, **Hotels**
   beherbergen sie (Betten = Kapazität). Wie viele Touristen kommen, hängt an der
@@ -153,8 +176,8 @@ bring deine Stadt vom Dorf zur Metropole.
 ### Moderne Features im Retro-Gewand
 
 - Drag-Bau mit Live-Vorschau und Kostenanzeige, **Undo/Redo** (Strg+Z/Y)
-- 10 Daten-Overlays: Strom, Wasser (Netzansicht versorgt/trocken), Verkehr, Landwert, Umwelt, Polizei,
-  Feuerwehr, Bildung, Gesundheit, Freizeit — Problemzonen zusätzlich
+- Daten-Overlays: Strom, Wasser (Netzansicht versorgt/trocken), Verkehr, Landwert, Umwelt, Polizei,
+  Feuerwehr, Bildung, Gesundheit, Freizeit, Kriminalität — Problemzonen zusätzlich
   **schraffiert** (farbenblind-tauglich)
 - **Statistik-Panel** mit Verlaufsgraphen (Einwohner, Kasse, Zufriedenheit)
 - **Tag/Nacht-Zyklus** mit leuchtenden Fenstern und Auto-Scheinwerfern
