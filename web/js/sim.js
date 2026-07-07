@@ -17,7 +17,7 @@ const S_NONE = 0, S_ROAD = 1, S_WIRE = 2, S_RZONE = 3, S_CZONE = 4, S_IZONE = 5,
   S_RAIL = 15, S_WTOWER = 16, S_PUMP = 17, S_TOWNHALL = 18, S_MONUMENT = 19, S_CASINO = 20,
   S_SOLAR = 21, S_BUSSTOP = 22, S_TRAINSTATION = 23, S_SUBWAY = 24, S_PORT = 25, S_PIPE = 26,
   S_HOTEL = 27, S_AMUSE = 28, S_HIGHWAY = 29, S_LANDFILL = 30, S_INCINER = 31,
-  S_RECYCLE = 32, S_AIRPORT = 33, S_NUCLEAR = 34;
+  S_RECYCLE = 32, S_AIRPORT = 33, S_NUCLEAR = 34, S_TREATMENT = 35, S_UNIVERSITY = 36;
 
 // Katalog. name = i18n-Key. Flags: bld, flam, drain, power, waterSupply, needsWaterAdj
 const DEFS = {
@@ -60,9 +60,27 @@ const DEFS = {
   [S_AIRPORT]:      { name: 'b.airport',      cost: 6000, upkeep: 120, size: 2, bld: 1, drain: 4, minPop: 1000, minYear: 1995 },
   // Kernkraftwerk: viel Strom, Kernschmelze-Risiko
   [S_NUCLEAR]:      { name: 'b.nuclear',      cost: 8000, upkeep: 200, size: 2, bld: 1, power: 500 },
+  // Kläranlage: reinigt verschmutztes Wasser im Netz
+  [S_TREATMENT]:    { name: 'b.treatment',    cost: 1800, upkeep: 35, size: 2, bld: 1, drain: 3, needsWaterAdj: 1 },
+  // Universität: hebt Bildung stadtweit + Attraktion
+  [S_UNIVERSITY]:   { name: 'b.university',   cost: 4000, upkeep: 80, size: 2, bld: 1, flam: 1, drain: 4, minPop: 2000 },
 };
 
 const LINE_COLORS = ['#e5484f', '#4f8fdc', '#41c46a', '#f0d95c', '#b06ce0', '#e08438', '#33c3c1', '#e39ac2'];
+
+// Erfolge: id, Geldbonus, Bedingung. Reihenfolge = Anzeige-Reihenfolge.
+const ACHS = [
+  { id: 'pop1k', bonus: 1000, test: s => s.pop >= 1000 },
+  { id: 'pop5k', bonus: 3000, test: s => s.pop >= 5000 },
+  { id: 'rich', bonus: 0, test: s => s.money >= 250000 },
+  { id: 'green', bonus: 2000, test: s => s.pop > 500 && s.avgPollR < 12 },
+  { id: 'safe', bonus: 1500, test: s => s.pop > 500 && s.avgCrime < 8 },
+  { id: 'healthy', bonus: 1500, test: s => s.pop > 500 && s.healthIndex >= 85 },
+  { id: 'educated', bonus: 2000, test: s => s.eduLevel >= 0.8 },
+  { id: 'tourist', bonus: 2000, test: s => s.tourists >= 500 },
+  { id: 'transit', bonus: 1000, test: s => s.lines.filter(l => l.active).length >= 3 },
+  { id: 'metro', bonus: 5000, test: s => s.pop >= 4000 && s.happiness >= 60 },
+];
 
 const MONTH_KEYS = ['m.jan', 'm.feb', 'm.mar', 'm.apr', 'm.mai', 'm.jun', 'm.jul', 'm.aug', 'm.sep', 'm.okt', 'm.nov', 'm.dez'];
 
@@ -181,6 +199,14 @@ class Sim {
     this.garbageProduced = 0; this.garbageCap = 0; this.garbageOverflow = 0;
     this.avgCrime = 0; this.eduLevel = 0;
     this.policies = { smokeDetect: false, recycle: false, proBiz: false, conserve: false, culture: false };
+    // Ressort-Finanzierung (0.5–1.5, skaliert Abdeckung & Unterhalt)
+    this.funding = { police: 1, fire: 1, school: 1, health: 1, park: 1 };
+    // Bezirke: pro Kachel eine Bezirks-ID (0 = keiner)
+    this.district = new Uint8Array(n);
+    this.districts = [];       // [{ id, name }]
+    // Wasserverschmutzung, Gesundheit, Erfolge (abgeleitet/serialisiert)
+    this.dirtyWater = false; this.healthIndex = 100;
+    this.achievements = {};
 
     this.genTerrain();
   }
@@ -374,6 +400,15 @@ class Sim {
   }
   get econ() { return this.econAt(this.monthsTotal); }
 
+  // ---------- Jahreszeit (aus dem Monat) ----------
+  get season() {
+    const m = this.month;
+    if (m === 11 || m === 0 || m === 1) return 'winter';
+    if (m <= 4) return 'spring';
+    if (m <= 7) return 'summer';
+    return 'autumn';
+  }
+
   // Hat diese Zone über ihr Netz eine Außenanbindung (Kartenrand/Hafen)?
   extOk(i) {
     const ap = this.accessPt[i];
@@ -493,6 +528,7 @@ class Sim {
       if (s >= S_RZONE && s <= S_IZONE && this.lvl[i] > 0) need += 1 + this.lvl[i];
       if (DEFS[s] && DEFS[s].drain && this.isAnchor(i)) need += DEFS[s].drain;
     }
+    if (this.season === 'winter') need = Math.round(need * BAL.SEASON.WINTER_POWER_F); // Heizen
     if (this.policies.conserve) need = Math.round(need * BAL.POLICY.conserve.needF);
     this.powerSupply = supply; this.powerNeed = need;
     const conducts = (i) => {
@@ -544,6 +580,7 @@ class Sim {
       if (isSource) { queue[tail++] = i; this.watered[i] = 1; }
       if (s >= S_RZONE && s <= S_IZONE && this.lvl[i] > 0) need += Math.ceil((1 + this.lvl[i]) / 2);
     }
+    if (this.season === 'summer') need = Math.round(need * BAL.SEASON.SUMMER_WATER_F); // Bewässern
     if (this.policies.conserve) need = Math.round(need * BAL.POLICY.conserve.needF);
     this.waterSupply = supply; this.waterNeed = need;
     const conducts = (i) => {
@@ -581,6 +618,15 @@ class Sim {
     // bestehenden Verbraucher (Wachstum, Zufriedenheit, Berater, Infofeld)
     // unverändert funktionieren.
     for (let i = 0; i < w * h; i++) this.covWater[i] = this.watered[i] ? 100 : 0;
+    // Verschmutztes Wasser: speist eine Quelle aus stark belastetem Wasser ein
+    // und fehlt eine (mit Strom versorgte) Kläranlage → Dreckwasser stadtweit.
+    let intakeDirty = false, hasTreatment = false;
+    for (let i = 0; i < w * h; i++) {
+      const s = this.st[i];
+      if ((s === S_WTOWER || s === S_PUMP) && this.watered[i] && this.poll[i] > BAL.WATER.DIRTY_POLL) intakeDirty = true;
+      else if (s === S_TREATMENT && this.powered[i] && this.isAnchor(i)) hasTreatment = true;
+    }
+    this.dirtyWater = intakeDirty && !hasTreatment;
   }
 
   // ---------- Anbindung: nächstes Verkehrsfeld im Umkreis 3 ----------
@@ -889,6 +935,19 @@ class Sim {
         case S_AMUSE:    if (this.powered[i]) this.spread(this.covPark, x, y, 11); break;
         case S_TOWNHALL: if (this.powered[i]) this.spread(this.covPark, x, y, 8); break;
         case S_MONUMENT: this.spread(this.covPark, x, y, 10); break;
+        case S_UNIVERSITY: if (this.powered[i]) this.spread(this.covSchool, x, y, 10); break;
+      }
+    }
+    // Ressort-Finanzierung skaliert die effektive Abdeckung
+    const F = this.funding;
+    if (F.police !== 1 || F.fire !== 1 || F.school !== 1 || F.health !== 1 || F.park !== 1) {
+      const cl = (v, f) => Math.max(0, Math.min(100, Math.round(v * f)));
+      for (let i = 0; i < w * h; i++) {
+        if (F.police !== 1) this.covPolice[i] = cl(this.covPolice[i], F.police);
+        if (F.fire !== 1) this.covFire[i] = cl(this.covFire[i], F.fire);
+        if (F.school !== 1) this.covSchool[i] = cl(this.covSchool[i], F.school);
+        if (F.health !== 1) this.covHealth[i] = cl(this.covHealth[i], F.health);
+        if (F.park !== 1) this.covPark[i] = cl(this.covPark[i], F.park);
       }
     }
     this.dirtyCov = false;
@@ -973,7 +1032,7 @@ class Sim {
   computeStats() {
     const B = BAL.HAPPY, D = BAL.DEMAND, AT = BAL.TOURISM.ATTRACT, GB = BAL.GARBAGE;
     let pop = 0, cJobs = 0, iJobs = 0, casinos = 0, townhall = false;
-    let hotelBeds = 0, attraction = 0;
+    let hotelBeds = 0, attraction = 0, unis = 0;
     let garbage = 0, garbCap = 0, recycleCut = 0;   // Müll: Aufkommen vs. Kapazität
     let schoolSum = 0, schoolCnt = 0;                // für das Bildungsniveau
     const n = this.w * this.h;
@@ -990,6 +1049,7 @@ class Sim {
       else if (s === S_STADIUM && this.powered[i] && this.isAnchor(i)) attraction += AT.stadium;
       else if (s === S_AMUSE && this.powered[i] && this.isAnchor(i)) attraction += AT.amuse;
       else if (s === S_AIRPORT && this.powered[i] && this.isAnchor(i)) attraction += AT.airport;
+      else if (s === S_UNIVERSITY && this.powered[i] && this.isAnchor(i)) { unis++; attraction += AT.university; }
       else if (s === S_LANDFILL && this.isAnchor(i)) garbCap += GB.LANDFILL_CAP;
       else if (s === S_INCINER && this.powered[i]) garbCap += GB.INCINER_CAP;
       else if (s === S_RECYCLE && this.powered[i]) recycleCut += GB.RECYCLE_CUT;
@@ -998,8 +1058,9 @@ class Sim {
     this.casinos = casinos;
     this.attraction = attraction; this.touristCap = hotelBeds;
 
-    // Bildungsniveau: geglätteter Ø der Schul-Abdeckung über Wohn-/Industriezonen
-    const targetEdu = schoolCnt > 0 ? (schoolSum / schoolCnt) / 100 : 0;
+    // Bildungsniveau: geglätteter Ø der Schul-Abdeckung + Universitäten (Bonus)
+    let targetEdu = schoolCnt > 0 ? (schoolSum / schoolCnt) / 100 : 0;
+    targetEdu = Math.min(1, targetEdu + unis * BAL.EDU.UNI_BOOST);
     this.eduLevel = Math.max(0, Math.min(1, this.eduLevel + (targetEdu - this.eduLevel) * BAL.EDU.SMOOTH));
     // Bildung macht Industrie produktiver → mehr Jobs aus demselben Level
     iJobs = Math.round(iJobs * (1 + this.eduLevel * BAL.EDU.JOB_BONUS));
@@ -1054,10 +1115,16 @@ class Sim {
       happy -= unemployment * B.UNEMPLOYED_F;
       if (this.brownout) happy -= B.BROWNOUT;
       if (this.waterShort) happy -= BAL.WATER.SHORT_HAPPY;
+      if (this.dirtyWater) happy -= BAL.WATER.DIRTY_HAPPY;
       // Müll-Überlauf drückt die Zufriedenheit (anteilig am Aufkommen)
       const overFrac = this.garbageProduced > 0 ? this.garbageOverflow / this.garbageProduced : 0;
       happy -= overFrac * GB.OVERFLOW_HAPPY;
-    }
+      // Gesundheitsindex: Krankenhaus-Abdeckung hebt, Verschmutzung/Dreckwasser senken
+      const H = BAL.HEALTH;
+      let hi = H.BASE + (cnt > 0 ? (covH / cnt) * H.COV_F - (pol / cnt) * H.POLL_F : 0);
+      if (this.dirtyWater) hi -= H.DIRTY;
+      this.healthIndex = Math.max(0, Math.min(100, Math.round(hi)));
+    } else { this.healthIndex = BAL.HEALTH.BASE; }
     this.happiness = Math.max(0, Math.min(100, Math.round(happy)));
 
     // ---------- Tourismus ----------
@@ -1069,7 +1136,9 @@ class Sim {
     const happyF = Math.max(0, (this.happiness - TB.HAPPY_MIN) / TB.HAPPY_DIV);
     const econF = 1 + this.econ * TB.ECON_F;
     const extF = extConnected ? TB.EXT_FULL : TB.EXT_LOCAL;
-    this.touristDemand = Math.max(0, Math.round(this.attraction * happyF * econF * extF));
+    // Sommer ist Tourismus-Hochsaison, Winter Nebensaison
+    const seasonF = this.season === 'summer' ? BAL.SEASON.SUMMER_TOUR_F : this.season === 'winter' ? BAL.SEASON.WINTER_TOUR_F : 1;
+    this.touristDemand = Math.max(0, Math.round(this.attraction * happyF * econF * extF * seasonF));
     this.tourists = Math.min(this.touristDemand, this.touristCap);
   }
 
@@ -1302,6 +1371,7 @@ class Sim {
     if (this.attraction >= 60 && this.touristCap === 0 &&
       (this.extRoadTotal + this.extRailTotal + this.portTotal) > 0) say('tourism');
     if (this.avgPollR > 32) say('env');
+    if (this.dirtyWater) say('dirtywater');
     if (this.garbageOverflow > 0 && this.pop > 150) say('garbage');
     if (this.avgCrime > 45 && this.pop > 250) say('crime');
     if (this.pop > 250 && this.avgFireCovR !== undefined && this.avgFireCovR < 22) say('fire');
@@ -1334,10 +1404,16 @@ class Sim {
     let upkeep = 0;
     const nukes = [];
     const coalF = this.year >= BAL.ERA.COAL_TAX_YEAR ? BAL.ERA.COAL_UPKEEP_F : 1; // CO₂-Abgabe
+    const F = this.funding;
     for (let i = 0; i < n; i++) {
       const s = this.st[i];
       if (s !== S_NONE && DEFS[s] && this.isAnchor(i)) {
-        upkeep += DEFS[s].upkeep * (s === S_COAL ? coalF : 1);
+        // Ressort-Finanzierung skaliert den Unterhalt der Dienstgebäude
+        let ff = 1;
+        if (s === S_POLICE) ff = F.police; else if (s === S_FIREDEP) ff = F.fire;
+        else if (s === S_SCHOOL) ff = F.school; else if (s === S_HOSPITAL) ff = F.health;
+        else if (s === S_PARK) ff = F.park;
+        upkeep += DEFS[s].upkeep * (s === S_COAL ? coalF : 1) * ff;
         if (s === S_NUCLEAR) nukes.push(i);
       }
     }
@@ -1398,6 +1474,14 @@ class Sim {
         this.events.push({ type: 'milestone', key, params: { pop: lim, bonus } });
       }
     });
+    // Erfolge: einmalig beim Erfüllen freischalten (Geldbonus + Meldung)
+    for (const a of ACHS) {
+      if (!this.achievements[a.id] && a.test(this)) {
+        this.achievements[a.id] = true;
+        if (a.bonus) this.money += a.bonus;
+        this.events.push({ type: 'milestone', key: 'ach.' + a.id, params: { bonus: a.bonus } });
+      }
+    }
     // Epochen-Ereignisse (je einmal, beim Erreichen des Jahres)
     const eras = [
       [BAL.ERA.SOLAR_YEAR, 'era94', 'ev.era94'],
@@ -1480,10 +1564,12 @@ class Sim {
         pow: rleEncode(this.powered), // sonst ändert der Brownout-Zufall beim Laden die Zufriedenheit
         wat: rleEncode(this.watered), // dito für das Wassernetz (Mangel-Sampling)
         poll: rleEncode(this.poll),   // sonst verschiebt frischer Verkehr die Umweltwerte
+        dist: rleEncode(this.district), // Bezirks-Zuordnung
       },
       anchors2,
       brownout: !!this.brownout, powerNeed: this.powerNeed, powerSupply: this.powerSupply,
       waterShort: !!this.waterShort, waterNeed: this.waterNeed, waterSupply: this.waterSupply,
+      dirtyWater: !!this.dirtyWater,
       money: this.money, debt: this.debt, taxRate: this.taxRate,
       day: this.day, month: this.month, year: this.year, startYear: this.startYear,
       cityName: this.cityName, cheated: this.cheated,
@@ -1494,6 +1580,7 @@ class Sim {
       actors: this.actors, history: this.history, advCd: this.advCd,
       scenario: this.scenario,
       policies: this.policies, eduLevel: eduSnapshot,
+      funding: this.funding, districts: this.districts, achievements: this.achievements,
     });
   }
 
@@ -1534,6 +1621,10 @@ class Sim {
     s.scenario = d.scenario || null;
     if (d.policies) for (const k in s.policies) s.policies[k] = !!d.policies[k];
     s.eduLevel = d.eduLevel || 0;
+    if (d.funding) for (const k in s.funding) if (typeof d.funding[k] === 'number') s.funding[k] = d.funding[k];
+    s.districts = d.districts || [];
+    s.achievements = d.achievements || {};
+    if (d.v >= 4 && d.rle.dist) rleDecode(d.rle.dist, s.district);
     s.computeWaterNear();
     // Aktive Brand-/Flutlisten aus den Arrays rekonstruieren
     for (let i = 0; i < s.w * s.h; i++) {
@@ -1556,6 +1647,7 @@ class Sim {
       s.waterShort = !!d.waterShort;
       s.waterNeed = d.waterNeed || 0;
       s.waterSupply = d.waterSupply || 0;
+      s.dirtyWater = !!d.dirtyWater;
       for (let i = 0; i < s.w * s.h; i++) s.covWater[i] = s.watered[i] ? 100 : 0;
     } else {
       s.computeWater();
@@ -1574,12 +1666,15 @@ class Sim {
 // Node-Export für Tests (im Browser wirkungslos)
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
-    Sim, DEFS, MONTH_KEYS, rleEncode, rleDecode,
+    Sim, DEFS, MONTH_KEYS, rleEncode, rleDecode, ACHS,
     T_GRASS, T_WATER, T_SAND, T_TREE,
     S_NONE, S_ROAD, S_WIRE, S_RZONE, S_CZONE, S_IZONE, S_PARK, S_POLICE,
     S_FIREDEP, S_SCHOOL, S_HOSPITAL, S_WIND, S_COAL, S_STADIUM, S_RUBBLE,
     S_RAIL, S_WTOWER, S_PUMP, S_TOWNHALL, S_MONUMENT, S_CASINO, S_SOLAR,
     S_BUSSTOP, S_TRAINSTATION, S_SUBWAY, S_PORT, S_PIPE, S_HOTEL, S_AMUSE,
     S_HIGHWAY, S_LANDFILL, S_INCINER, S_RECYCLE, S_AIRPORT, S_NUCLEAR,
+    S_TREATMENT, S_UNIVERSITY,
   };
 }
+// Browser: Erfolge-Liste für die UI verfügbar machen
+if (typeof window !== 'undefined') window.ACHS = ACHS;

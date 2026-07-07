@@ -53,7 +53,7 @@ function check(name, cond) {
   // Neues Spiel (fester Seed)
   await page.click('#btnNew');
   await page.waitForTimeout(300);
-  check('Szenario-Liste hat 5 Einträge', await page.locator('.scenOpt').count() === 5);
+  check('Szenario-Liste hat 7 Einträge', await page.locator('.scenOpt').count() === 7);
   await page.fill('#seedInput', '93');
   await page.waitForTimeout(200);
   await page.click('#btnNgStart');
@@ -232,8 +232,35 @@ function check(name, cond) {
   await page.click('#btnStats');
   await page.waitForTimeout(300);
   const dashCells = await page.evaluate(() => document.querySelectorAll('#statsDash .dashCell').length);
-  check('Stadt-Dashboard mit Kennzahlen (' + dashCells + ')', dashCells >= 8);
+  check('Stadt-Dashboard mit Kennzahlen (' + dashCells + ')', dashCells >= 10);
   await page.click('#btnStatsClose');
+
+  // Erfolge-Panel
+  await page.click('#btnAch');
+  await page.waitForTimeout(200);
+  const achCells = await page.evaluate(() => document.querySelectorAll('#achPanel .achCell').length);
+  check('Erfolge-Panel gefüllt (' + achCells + ')', achCells >= 8);
+  await page.click('#btnAchClose');
+
+  // Ressort-Finanzierung im Budget-Panel
+  await page.click('#btnBudget');
+  await page.waitForTimeout(200);
+  await page.evaluate(() => { const el = document.getElementById('fundPolice'); el.value = 140; el.dispatchEvent(new Event('input')); });
+  const fpol = await page.evaluate(() => window.RETRO.sim.funding.police);
+  check('Finanzierungsregler wirkt (' + fpol + ')', Math.abs(fpol - 1.4) < 0.001);
+  await page.click('#btnBudgetClose');
+
+  // Bezirke: malen + Panel
+  await page.evaluate(() => {
+    const s = window.RETRO.sim, c = s.w >> 1;
+    for (let y = c - 3; y < c + 3; y++) for (let x = c - 3; x < c + 3; x++) s.district[s.idx(x, y)] = 2;
+    s.districts.push({ id: 2, name: 'Zentrum' });
+  });
+  await page.click('#btnDistricts');
+  await page.waitForTimeout(200);
+  const distRows = await page.evaluate(() => document.querySelectorAll('#districtsList .distRow').length);
+  check('Bezirks-Panel listet Bezirke (' + distRows + ')', distRows >= 1);
+  await page.click('#btnDistrictsClose');
 
   // Simulation laufen lassen
   await page.click('#spd3');

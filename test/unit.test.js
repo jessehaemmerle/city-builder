@@ -8,7 +8,8 @@ const M = require('./load-sim.js');
 const { Sim, rleEncode, rleDecode } = M;
 const { S_ROAD, S_RAIL, S_WIRE, S_RZONE, S_CZONE, S_IZONE, S_COAL, S_WIND, S_WTOWER, S_PUMP, S_SOLAR,
   S_BUSSTOP, S_SUBWAY, S_PORT, S_PIPE, S_HOTEL, S_AMUSE, S_PARK, S_POLICE, S_SCHOOL,
-  S_HIGHWAY, S_LANDFILL, S_INCINER, S_RECYCLE, S_AIRPORT, S_NUCLEAR, S_NONE, T_WATER } = M;
+  S_HIGHWAY, S_LANDFILL, S_INCINER, S_RECYCLE, S_AIRPORT, S_NUCLEAR,
+  S_TREATMENT, S_UNIVERSITY, S_FIREDEP, S_HOSPITAL, S_NONE, T_WATER } = M;
 
 let pass = 0, fail = 0;
 function check(name, cond) {
@@ -60,6 +61,7 @@ section('RLE-Kodierung');
 section('Speichern/Laden v4 (RLE) + Anker-Rekonstruktion');
 {
   const s = buildCity(new Sim(64, 64, 4242));
+  s.disasters = false; // struktureller Test (Anker) — keine Katastrophen, die das KW zerstören
   for (let t = 0; t < 400; t++) { s.tick(); s.events.length = 0; }
   const json = s.serialize();
   const plainSize = JSON.stringify(Array.from(s.st)).length * 5; // grobe Referenz
@@ -404,6 +406,7 @@ section('Wassernetz (Leitungen, Kapazität, Save/Load)');
 {
   const s = new Sim(64, 64, 5150);
   s.money = 200000;
+  s.month = 3; // Frühling: keine Jahreszeit-Faktoren auf Strom/Wasser (isolierter Test)
   const c = 32;
   for (let y = c - 3; y <= c + 3; y++) for (let x = 8; x <= 56; x++) s.terr[s.idx(x, y)] = 0;
   for (let x = 10; x <= 30; x++) s.place(S_ROAD, x, c);
@@ -701,6 +704,148 @@ section('Save/Load: Verordnungen & Bildungsniveau bitgenau');
   const s2 = Sim.load(s.serialize());
   check('Verordnungen überleben Save/Load', s2.policies.recycle === true && s2.policies.culture === true);
   check('Bildungsniveau überlebt Save/Load', Math.abs(s2.eduLevel - s.eduLevel) < 1e-9);
+  check('Zustands-Hash identisch (bitgenau)', hashSim(s2) === hashSim(s));
+}
+
+section('Ressort-Finanzierung (Abdeckung & Kosten skalieren)');
+{
+  const s = new Sim(64, 64, 111); s.money = 300000; s.month = 3;
+  const c = 32;
+  for (let y = c - 2; y <= c + 2; y++) for (let x = 20; x <= 40; x++) s.terr[s.idx(x, y)] = 0;
+  for (let x = 20; x <= 40; x++) s.place(S_ROAD, x, c);
+  s.place(S_COAL, 21, c + 1);
+  s.place(S_POLICE, 30, c + 1);
+  for (let x = 26; x <= 34; x++) { s.place(S_RZONE, x, c - 1); s.lvl[s.idx(x, c - 1)] = 3; }
+  s.computePower(); s.computeCoverage();
+  const zi = s.idx(30, c - 1), covFull = s.covPolice[zi];
+  check('Volle Finanzierung: Abdeckung vorhanden (' + covFull + ')', covFull > 0);
+  s.funding.police = 0.5; s.computeCoverage();
+  check('Halbe Finanzierung halbiert die Abdeckung (' + s.covPolice[zi] + ')', s.covPolice[zi] < covFull);
+  s.computeCrime(); const crimeLow = s.crime[zi];
+  s.funding.police = 1.5; s.computeCoverage(); s.computeCrime();
+  check('Bessere Finanzierung senkt die Kriminalität', s.crime[zi] < crimeLow);
+  // Unterhalt skaliert mit der Finanzierung
+  s.funding.police = 0.5; s.computeStats(); s.monthlyBudget();
+  const up1 = s.lastBudget.upkeep;
+  s.funding.police = 1.5; s.monthlyBudget();
+  check('Höhere Finanzierung kostet mehr Unterhalt (' + up1 + ' → ' + s.lastBudget.upkeep + ')', s.lastBudget.upkeep > up1);
+}
+
+section('Jahreszeiten (Winter=Strom, Sommer=Wasser/Tourismus)');
+{
+  const mk = () => {
+    const s = new Sim(48, 48, 7); s.money = 200000;
+    const c = 24;
+    for (let y = c - 2; y <= c + 2; y++) for (let x = c - 8; x <= c + 8; x++) s.terr[s.idx(x, y)] = 0;
+    for (let x = c - 8; x <= c + 8; x++) s.place(S_ROAD, x, c);
+    s.place(S_COAL, c - 8, c + 1);
+    for (let x = c - 6; x <= c + 6; x++) { s.place(S_RZONE, x, c - 1); s.lvl[s.idx(x, c - 1)] = 3; }
+    s.place(S_WTOWER, c, c + 1);
+    return s;
+  };
+  const s = mk();
+  s.month = 3; s.computePower(); const pSpring = s.powerNeed;
+  s.month = 0; s.computePower(); const pWinter = s.powerNeed;
+  check('Winter erhöht den Strombedarf (' + pSpring + ' → ' + pWinter + ')', pWinter > pSpring);
+  s.month = 3; s.computeWater(); const wSpring = s.waterNeed;
+  s.month = 6; s.computeWater(); const wSummer = s.waterNeed;
+  check('Sommer erhöht den Wasserbedarf (' + wSpring + ' → ' + wSummer + ')', wSummer > wSpring);
+}
+
+section('Wasserverschmutzung + Kläranlage');
+{
+  const s = new Sim(64, 64, 909); s.money = 300000;
+  let shore = -1;
+  for (let y = 1; y < 63 && shore < 0; y++) for (let x = 1; x < 63 && shore < 0; x++) {
+    const i = s.idx(x, y);
+    if (s.terr[i] === T_WATER) continue;
+    if ([s.idx(x, y - 1), s.idx(x + 1, y), s.idx(x, y + 1), s.idx(x - 1, y)].some(j => s.terr[j] === T_WATER)) shore = i;
+  }
+  const sx = shore % 64, sy = (shore / 64) | 0;
+  s.place(S_PUMP, sx, sy);
+  // Strom fürs Pumpwerk (Windrad auf ein Land-Nachbarfeld)
+  for (const [nx, ny] of [[sx, sy - 1], [sx + 1, sy], [sx, sy + 1], [sx - 1, sy]]) {
+    if (s.inMap(nx, ny) && s.terr[s.idx(nx, ny)] !== T_WATER && s.st[s.idx(nx, ny)] === S_NONE) { s.place(S_WIND, nx, ny); break; }
+  }
+  s.poll[shore] = 55; // stark belastetes Wasser am Pumpwerk
+  s.computePower(); s.computeWater();
+  check('Pumpwerk an Dreckwasser → verschmutztes Wasser (versorgt=' + s.watered[shore] + ')', s.dirtyWater === true);
+  // Kläranlage an anderer Uferstelle bauen (mit Strom)
+  let shore2 = -1;
+  for (let y = 1; y < 63 && shore2 < 0; y++) for (let x = 1; x < 63 && shore2 < 0; x++) {
+    const i = s.idx(x, y);
+    if (i === shore || s.terr[i] === T_WATER || s.st[i] !== S_NONE) continue;
+    if (s.canPlace(S_TREATMENT, x, y).ok) shore2 = i;
+  }
+  if (shore2 >= 0) {
+    s.place(S_TREATMENT, shore2 % 64, (shore2 / 64) | 0);
+    // Strom hinbringen
+    for (let i = 0; i < 64 * 64; i++) if (s.st[i] === S_NONE && Math.abs((i % 64) - (shore2 % 64)) < 2) {}
+    s.place(S_WIND, (shore2 % 64), ((shore2 / 64) | 0) - 1 >= 0 ? ((shore2 / 64) | 0) - 1 : 0);
+    s.computePower(); s.computeWater();
+    check('Kläranlage (mit Strom) reinigt das Wasser', s.dirtyWater === false);
+  }
+}
+
+section('Universität + Gesundheitsindex');
+{
+  const mk = (withUni) => {
+    const s = new Sim(48, 48, 5); s.money = 300000; s.pop = 2500;
+    const c = 24;
+    for (let y = c - 2; y <= c + 3; y++) for (let x = c - 8; x <= c + 8; x++) s.terr[s.idx(x, y)] = 0;
+    for (let x = c - 8; x <= c + 8; x++) s.place(S_ROAD, x, c);
+    s.place(S_COAL, c - 8, c + 1);
+    for (let x = c - 6; x <= c + 6; x++) { s.place(S_RZONE, x, c - 1); s.lvl[s.idx(x, c - 1)] = 2; }
+    if (withUni) s.place(S_UNIVERSITY, c, c + 1);
+    for (let t = 0; t < 120; t++) { s.tick(); s.events.length = 0; }
+    return s.eduLevel;
+  };
+  const noUni = mk(false), uni = mk(true);
+  check('Universität hebt das Bildungsniveau (' + noUni.toFixed(2) + ' → ' + uni.toFixed(2) + ')', uni > noUni + 0.1);
+  // Gesundheitsindex: Krankenhaus hebt ihn
+  const s = new Sim(48, 48, 9); s.money = 300000; s.month = 3;
+  const c = 24;
+  for (let y = c - 2; y <= c + 2; y++) for (let x = c - 8; x <= c + 8; x++) s.terr[s.idx(x, y)] = 0;
+  for (let x = c - 8; x <= c + 8; x++) s.place(S_ROAD, x, c);
+  s.place(S_COAL, c - 8, c + 1);
+  for (let x = c - 6; x <= c + 6; x++) { s.place(S_RZONE, x, c - 1); s.lvl[s.idx(x, c - 1)] = 2; }
+  s.computePower(); s.computeCoverage(); s.computeStats();
+  const hNo = s.healthIndex;
+  s.place(S_HOSPITAL, c, c + 1);
+  s.computePower(); s.dirtyCov = true; s.computeCoverage(); s.computeStats();
+  check('Krankenhaus hebt den Gesundheitsindex (' + hNo + ' → ' + s.healthIndex + ')', s.healthIndex > hNo);
+}
+
+section('Erfolge (Achievements)');
+{
+  const s = new Sim(48, 48, 1); s.money = 0; s.pop = 1000;
+  s.monthlyBudget();
+  check('Erfolg „1.000 Einwohner“ freigeschaltet', s.achievements.pop1k === true);
+  const s2 = new Sim(48, 48, 1); s2.money = 300000; s2.pop = 100;
+  s2.monthlyBudget();
+  check('Erfolg „Volle Kassen“ bei viel Geld', s2.achievements.rich === true);
+  check('Nicht erfüllte Erfolge bleiben gesperrt', !s2.achievements.pop5k);
+}
+
+section('Save/Load: Finanzierung, Bezirke, Erfolge, Dreckwasser');
+{
+  const s = new Sim(64, 64, 4242); s.money = 100000; s.month = 3;
+  const c = 32;
+  for (let x = c - 8; x <= c + 8; x++) { s.terr[s.idx(x, c)] = 0; s.terr[s.idx(x, c - 1)] = 0; }
+  for (let x = c - 8; x <= c + 8; x++) s.place(S_ROAD, x, c);
+  s.place(S_COAL, c - 8, c + 1);
+  for (let x = c - 6; x <= c + 6; x++) { s.place(S_RZONE, x, c - 1); s.lvl[s.idx(x, c - 1)] = 2; }
+  s.funding.police = 1.4; s.funding.health = 0.7;
+  for (let x = c - 4; x <= c + 4; x++) s.district[s.idx(x, c - 1)] = 3;
+  s.districts.push({ id: 3, name: 'Altstadt' });
+  s.achievements.rich = true;
+  for (let t = 0; t < 60; t++) { s.tick(); s.events.length = 0; }
+  const s2 = Sim.load(s.serialize());
+  check('Finanzierung überlebt Save/Load', Math.abs(s2.funding.police - 1.4) < 1e-9 && Math.abs(s2.funding.health - 0.7) < 1e-9);
+  let distOk = s2.districts.length === 1 && s2.districts[0].name === 'Altstadt';
+  for (let i = 0; i < 64 * 64 && distOk; i++) if (s2.district[i] !== s.district[i]) distOk = false;
+  check('Bezirke überleben Save/Load', distOk);
+  check('Erfolge überleben Save/Load', s2.achievements.rich === true);
   check('Zustands-Hash identisch (bitgenau)', hashSim(s2) === hashSim(s));
 }
 

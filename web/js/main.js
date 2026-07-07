@@ -30,6 +30,7 @@
   let tutorialShown = false;
   let currentSlot = 0;
   let nightEnabled = true;
+  let weatherEnabled = true;
   let lastFrame = 0;
   let touchConfirmMode = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
   let pendingTap = null;
@@ -45,6 +46,14 @@
   let planes = [];  // fliegen über die Karte (bei Flughäfen)
   let lastCarSpawn = 0;
   let lastAirSpawn = 0;
+
+  // Bezirke (Districts)
+  let curDistrict = 1; // aktuell zu malende Bezirks-ID (0 = löschen)
+  const DISTRICT_COLORS = ['#000000', '#4f8fdc', '#41c46a', '#f0d95c', '#e08438',
+    '#b06ce0', '#e5484f', '#33c3c1', '#e39ac2', '#8fbf5a', '#c98a4f'];
+
+  // Ereignis-/Alarm-Protokoll (für das Alarm-Panel)
+  const alertLog = []; // { key, params, x, y, ts, kind }
 
   // Berater
   const advisorQueue = [];
@@ -64,6 +73,8 @@
     { id: 'sprint', goal: { minPop: 1000, years: 5 } },
     { id: 'green', goal: { minPop: 2000, minHappy: 55, years: 10, noCoal: true } },
     { id: 'broke', goal: { minPop: 1500, minHappy: 50, years: 8 }, fixedSeed: 777, fixedSize: 64 },
+    { id: 'tourism', goal: { minPop: 2500, minHappy: 60, years: 12 }, fixedSeed: 1984, fixedSize: 64 },
+    { id: 'metropolis', goal: { minPop: 5000, minHappy: 55, years: 15 } },
   ];
   let ngScenario = 'free';
 
@@ -88,6 +99,7 @@
     { id: 'nuclear',  mode: 'single', s: S_NUCLEAR },
     { id: 'wtower',   mode: 'single', s: S_WTOWER },
     { id: 'pump',     mode: 'single', s: S_PUMP },
+    { id: 'treatment', mode: 'single', s: S_TREATMENT },
     { id: 'landfill', mode: 'single', s: S_LANDFILL },
     { id: 'inciner',  mode: 'single', s: S_INCINER },
     { id: 'recycle',  mode: 'single', s: S_RECYCLE },
@@ -97,6 +109,7 @@
     { id: 'police',   mode: 'single', s: S_POLICE },
     { id: 'firedep',  mode: 'single', s: S_FIREDEP },
     { id: 'school',   mode: 'single', s: S_SCHOOL },
+    { id: 'university', mode: 'single', s: S_UNIVERSITY },
     { id: 'hospital', mode: 'single', s: S_HOSPITAL },
     { id: 'stadium',  mode: 'single', s: S_STADIUM },
     { id: 'townhall', mode: 'single', s: S_TOWNHALL },
@@ -104,6 +117,7 @@
     { id: 'casino',   mode: 'single', s: S_CASINO },
     { id: 'hotel',    mode: 'single', s: S_HOTEL },
     { id: 'amuse',    mode: 'single', s: S_AMUSE },
+    { id: 'district', mode: 'district' },
   ];
   const toolById = {};
   TOOLS.forEach(tl => toolById[tl.id] = tl);
@@ -138,6 +152,8 @@
       case 'casino': return Sprites.store.casino;
       case 'hotel': return Sprites.store.hotel;
       case 'amuse': return Sprites.store.amuse;
+      case 'treatment': return Sprites.store.treatment;
+      case 'university': return Sprites.store.university;
       case 'landfill': return Sprites.store.landfill;
       case 'inciner': return Sprites.store.inciner;
       case 'recycle': return Sprites.store.recycle;
@@ -190,6 +206,12 @@
     } else if (tl.id === 'dozer') {
       x.strokeStyle = '#ff6b6b'; x.lineWidth = 3;
       x.beginPath(); x.moveTo(3, 3); x.lineTo(13, 13); x.moveTo(13, 3); x.lineTo(3, 13); x.stroke();
+    } else if (tl.id === 'district') {
+      x.fillStyle = '#4f8fdc'; x.fillRect(2, 2, 5, 5);
+      x.fillStyle = '#41c46a'; x.fillRect(9, 2, 5, 5);
+      x.fillStyle = '#f0d95c'; x.fillRect(2, 9, 5, 5);
+      x.fillStyle = '#e08438'; x.fillRect(9, 9, 5, 5);
+      x.strokeStyle = '#f2f2ef'; x.lineWidth = 1; x.strokeRect(1.5, 1.5, 13, 13);
     } else {
       const s = toolSprite(tl, 0);
       x.drawImage(s, 0, 0, s.width, s.height, 0, 0, 16, 16);
@@ -409,6 +431,100 @@
     });
   }
 
+  // ---------- Bezirke: Kennzahlen + Panel ----------
+  function districtStats(id) {
+    let pop = 0, lvSum = 0, crSum = 0, cnt = 0, minX = 1e9, minY = 1e9, maxX = -1, maxY = -1, tiles = 0;
+    for (let i = 0; i < sim.w * sim.h; i++) {
+      if (sim.district[i] !== id) continue;
+      tiles++;
+      const x = i % sim.w, y = (i / sim.w) | 0;
+      if (x < minX) minX = x; if (y < minY) minY = y; if (x > maxX) maxX = x; if (y > maxY) maxY = y;
+      if (sim.st[i] === S_RZONE && sim.lvl[i] > 0) {
+        pop += BAL.R_POP[sim.lvl[i]]; lvSum += sim.landv[i]; crSum += sim.crime[i]; cnt++;
+      }
+    }
+    return { pop, landv: cnt ? Math.round(lvSum / cnt) : 0, crime: cnt ? Math.round(crSum / cnt) : 0,
+      tiles, cx: maxX >= 0 ? ((minX + maxX) / 2) | 0 : 0, cy: maxY >= 0 ? ((minY + maxY) / 2) | 0 : 0 };
+  }
+  function renderDistricts() {
+    if (!sim) return;
+    let html = '<div class="resHint">' + t('dist.hint') + '</div><div class="distPalette">';
+    for (let d = 0; d <= 10; d++) {
+      const col = d === 0 ? 'transparent' : DISTRICT_COLORS[d % DISTRICT_COLORS.length];
+      const sel = d === curDistrict ? ' sel' : '';
+      const label = d === 0 ? '⌫' : d;
+      html += '<button class="distSwatch' + sel + '" data-d="' + d + '" style="background:' + col + '">' + label + '</button>';
+    }
+    html += '</div><div class="resList">';
+    if (!sim.districts.length) html += '<div class="resEmpty">' + t('dist.none') + '</div>';
+    for (const d of sim.districts) {
+      const st = districtStats(d.id);
+      if (st.tiles === 0) continue;
+      const col = DISTRICT_COLORS[d.id % DISTRICT_COLORS.length];
+      html += '<div class="distRow" data-x="' + st.cx + '" data-y="' + st.cy + '" data-id="' + d.id + '">' +
+        '<span class="distDot" style="background:' + col + '"></span>' +
+        '<b class="distName" data-id="' + d.id + '">' + d.name + '</b>' +
+        '<div class="resMeta">👤 ' + st.pop + ' · 🏷 ' + st.landv + '% · 🚔 ' + st.crime + '%</div></div>';
+    }
+    html += '</div>';
+    $('districtsList').innerHTML = html;
+    $('districtsList').querySelectorAll('.distSwatch').forEach(b =>
+      b.addEventListener('click', () => { curDistrict = +b.dataset.d; selectTool('district'); renderDistricts(); Sound.sfx.click(); }));
+    $('districtsList').querySelectorAll('.distRow').forEach(row =>
+      row.addEventListener('click', (e) => {
+        if (e.target.classList.contains('distName')) {
+          const id = +e.target.dataset.id, d = sim.districts.find(x => x.id === id);
+          const nn = prompt(t('dist.rename'), d.name);
+          if (nn != null) { d.name = nn.slice(0, 20); renderDistricts(); }
+          return;
+        }
+        centerOnTile(+row.dataset.x, +row.dataset.y); Sound.sfx.click();
+      }));
+  }
+
+  // ---------- Alarm-/Ereignis-Panel ----------
+  function pushAlert(ev) {
+    const hasLoc = typeof ev.x === 'number' && typeof ev.y === 'number';
+    alertLog.unshift({ key: ev.key, params: ev.params, x: ev.x, y: ev.y, kind: ev.type, hasLoc,
+      when: sim ? sim.dateStr() : '' });
+    if (alertLog.length > 60) alertLog.pop();
+    if (!$('alertsPanel').classList.contains('hidden')) renderAlerts();
+  }
+  function renderAlerts() {
+    if (!alertLog.length) { $('alertsList').innerHTML = '<div class="resEmpty">' + t('alerts.none') + '</div>'; return; }
+    let html = '';
+    for (let k = 0; k < alertLog.length; k++) {
+      const a = alertLog[k];
+      const cls = a.kind === 'bad' ? 'alertBad' : a.kind === 'milestone' ? 'alertGood' : 'alertInfo';
+      html += '<div class="alertRow ' + cls + (a.hasLoc ? ' jump' : '') + '" data-k="' + k + '">' +
+        '<span class="resMeta">' + a.when + '</span><br>' + t(a.key || '', a.params) +
+        (a.hasLoc ? ' <span class="resMeta">📍</span>' : '') + '</div>';
+    }
+    $('alertsList').innerHTML = html;
+    $('alertsList').querySelectorAll('.alertRow.jump').forEach(row =>
+      row.addEventListener('click', () => {
+        const a = alertLog[+row.dataset.k];
+        selectTool('point'); centerOnTile(a.x, a.y); Sound.sfx.click();
+      }));
+  }
+
+  // ---------- Erfolge (Achievements) ----------
+  function renderAchievements() {
+    if (!sim) return;
+    const list = (typeof window.ACHS !== 'undefined') ? window.ACHS : [];
+    let done = 0;
+    let html = '<div class="achGrid">';
+    for (const a of list) {
+      const got = !!sim.achievements[a.id];
+      if (got) done++;
+      html += '<div class="achCell' + (got ? ' got' : '') + '">' +
+        '<div class="achIcon">' + (got ? '🏆' : '🔒') + '</div>' +
+        '<div><b>' + t('ach.' + a.id) + '</b><br><span class="resMeta">' + t('achd.' + a.id) + '</span></div></div>';
+    }
+    html += '</div>';
+    $('achList').innerHTML = '<div class="resHint">' + done + ' / ' + list.length + '</div>' + html;
+  }
+
   function randomCitizen() {
     if (!sim) return null;
     const homes = [];
@@ -531,7 +647,7 @@
       if (pendingTap) return [[pendingTap.x, pendingTap.y]];
       if (hover.x < 0) return null;
       const tl = toolById[tool];
-      if (tl.mode === 'single' || tl.mode === 'line' || tl.mode === 'rect' || tl.mode === 'paint')
+      if (tl.mode === 'single' || tl.mode === 'line' || tl.mode === 'rect' || tl.mode === 'paint' || tl.mode === 'district')
         return [[hover.x, hover.y]];
       return null;
     }
@@ -609,6 +725,20 @@
   function commitBuild(tiles) {
     const tl = toolById[tool];
     tiles = tiles || previewTiles() || [];
+    // Bezirke malen: keine Kosten, keine Struktur — nur Bezirks-ID setzen
+    if (tl.mode === 'district') {
+      let painted = 0;
+      for (const [x, y] of tiles) {
+        if (!sim.inMap(x, y)) continue;
+        const i = sim.idx(x, y);
+        if (sim.district[i] !== curDistrict) { sim.district[i] = curDistrict; painted++; sim.markChanged(i); }
+      }
+      if (painted && curDistrict > 0 && !sim.districts.some(d => d.id === curDistrict)) {
+        sim.districts.push({ id: curDistrict, name: t('dist.default', { n: curDistrict }) });
+      }
+      if (painted) Sound.sfx.place();
+      return;
+    }
     let built = 0, spent = 0, lastReason = '', lastParams = null;
     const parts = [];
     for (const [x, y] of tiles) {
@@ -808,7 +938,7 @@
       return;
     }
     drag = { x0: p.x, y0: p.y, x1: p.x, y1: p.y };
-    if (tl.mode === 'paint' || tl.mode === 'single') {
+    if (tl.mode === 'paint' || tl.mode === 'single' || tl.mode === 'district') {
       commitBuild();
       if (tl.mode === 'single') drag = null;
     }
@@ -828,7 +958,7 @@
       const tl = toolById[tool];
       if ((p.x !== drag.x1 || p.y !== drag.y1)) {
         drag.x1 = p.x; drag.y1 = p.y;
-        if (tl.mode === 'paint') commitBuild();
+        if (tl.mode === 'paint' || tl.mode === 'district') commitBuild();
       }
     }
   });
@@ -1014,7 +1144,9 @@
       extra += buildingDetails(s, i);
     }
     let html = '<h3>' + name + '</h3>' +
-      '<div>' + t('ui.pos') + ': ' + x + ', ' + y + '</div>' + extra;
+      '<div>' + t('ui.pos') + ': ' + x + ', ' + y +
+      (sim.district[i] ? ' · <span style="color:' + DISTRICT_COLORS[sim.district[i] % DISTRICT_COLORS.length] + '">▮</span> ' +
+        ((sim.districts.find(dd => dd.id === sim.district[i]) || {}).name || '') : '') + '</div>' + extra;
     if (sim.burn[i] > 0) html += '<div class="no">' + t('ui.burning') + '</div>';
     if (sim.floodT[i] > 0) html += '<div class="no">' + t('ui.flooded') + '</div>';
     // Wachstums-Diagnose für Zonen
@@ -1061,7 +1193,11 @@
     while (sim.events.length) {
       const ev = sim.events.shift();
       if (ev.type === 'advisor') { showAdvisor(ev.adv); continue; }
-      const msg = t(ev.key, ev.params);
+      pushAlert(ev); // ins Alarm-Protokoll aufnehmen
+      const isAch = ev.key && ev.key.startsWith('ach.');
+      const msg = isAch
+        ? '🏆 ' + t('ach.title').replace(/^🏆\s*/, '') + ': ' + t(ev.key) + (ev.params && ev.params.bonus ? ' (+' + ev.params.bonus + ' €)' : '')
+        : t(ev.key, ev.params);
       toast(msg, ev.type === 'milestone' ? 'milestone' : ev.type === 'bad' ? 'bad' : '');
       if (ev.type === 'milestone') Sound.sfx.milestone();
       else if (ev.type === 'bad' && (ev.key === 'ev.fire' || ev.key === 'ev.tornado' || ev.key === 'ev.flood')) Sound.sfx.fire();
@@ -1100,17 +1236,21 @@
       : ec < BAL.ECONOMY.PHASE_LO ? t('ui.econ.bust') : t('ui.econ.normal');
     eco.title = t('ui.econLbl') + ': ' + Math.round(ec * 100) + '%';
     eco.style.color = ec > BAL.ECONOMY.PHASE_HI ? '#6fe06f' : ec < BAL.ECONOMY.PHASE_LO ? '#ff6b6b' : '';
-    $('uiDate').textContent = sim.dateStr();
+    const SEASON_ICON = { winter: '❄️', spring: '🌱', summer: '☀️', autumn: '🍂' };
+    $('uiDate').textContent = SEASON_ICON[sim.season] + ' ' + sim.dateStr();
     $('rciR').style.height = Math.max(0, sim.demandR) * 100 + '%';
     $('rciC').style.height = Math.max(0, sim.demandC) * 100 + '%';
     $('rciI').style.height = Math.max(0, sim.demandI) * 100 + '%';
-    for (const id of ['stadium', 'townhall', 'monument', 'casino', 'subway', 'port']) {
+    for (const id of ['stadium', 'townhall', 'monument', 'casino', 'subway', 'port', 'university', 'airport', 'hotel', 'amuse']) {
       const el = $('tool_' + id);
       const def = DEFS[toolById[id].s];
-      if (el) el.classList.toggle('locked', sim.pop < def.minPop);
+      if (el && def.minPop) el.classList.toggle('locked', sim.pop < def.minPop ||
+        (def.minYear ? sim.year < def.minYear : false));
     }
-    const sol = $('tool_solar');
-    if (sol) sol.classList.toggle('locked', sim.year < DEFS[S_SOLAR].minYear);
+    for (const id of ['solar', 'recycle', 'airport']) {
+      const el = $('tool_' + id), def = DEFS[toolById[id].s];
+      if (el && def.minYear && sim.year < def.minYear) el.classList.add('locked');
+    }
   }
 
   // ---------- Fahrzeuge (visuell) ----------
@@ -1495,6 +1635,24 @@
     }
   }
 
+  // Wetter: Schnee (Winter) bzw. Regen (Frühling/Herbst), rein visuell
+  function drawWeather(now) {
+    if (!sim || !weatherEnabled) return;
+    const season = sim.season;
+    const snow = season === 'winter';
+    const rain = (season === 'spring' || season === 'autumn') && (Math.floor(now / 9000) % 3 === 0);
+    if (!snow && !rain) return;
+    const W = canvas.width, H = canvas.height, n = snow ? 90 : 130;
+    for (let k = 0; k < n; k++) {
+      const bx = (k * 137.5) % W, sp = snow ? 0.02 : 0.13;
+      const x = (bx + (snow ? Math.sin(now / 600 + k) * 10 : 0)) % W;
+      const y = ((k * 89.3) % H + now * sp * (0.6 + (k % 5) * 0.12)) % H;
+      if (snow) { ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fillRect(x, y, 2, 2); }
+      else { ctx.strokeStyle = 'rgba(150,190,255,0.45)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - 2, y + 7); ctx.stroke(); }
+    }
+    if (snow) { ctx.fillStyle = 'rgba(210,225,255,0.06)'; ctx.fillRect(0, 0, W, H); } // Winterschleier
+  }
+
   // ---------- Tag/Nacht ----------
   function nightAlpha() {
     if (!nightEnabled || !sim) return 0;
@@ -1628,10 +1786,12 @@
           if (!inChunk) continue;
           g.drawImage(S('rubble'), lx, ly);
         } else if (s === S_COAL || s === S_STADIUM || s === S_PORT || s === S_AMUSE ||
-                   s === S_LANDFILL || s === S_AIRPORT || s === S_NUCLEAR) {
+                   s === S_LANDFILL || s === S_AIRPORT || s === S_NUCLEAR ||
+                   s === S_TREATMENT || s === S_UNIVERSITY) {
           if (sim.anchor[i] === i) { // Anker kann im Randbereich liegen → Überhang zeichnen
             const nm2 = s === S_COAL ? 'coal' : s === S_STADIUM ? 'stadium' : s === S_PORT ? 'port'
-              : s === S_AMUSE ? 'amuse' : s === S_LANDFILL ? 'landfill' : s === S_AIRPORT ? 'airport' : 'nuclear';
+              : s === S_AMUSE ? 'amuse' : s === S_LANDFILL ? 'landfill' : s === S_AIRPORT ? 'airport'
+              : s === S_TREATMENT ? 'treatment' : s === S_UNIVERSITY ? 'university' : 'nuclear';
             g.drawImage(S(nm2), lx, ly, TILE * 2, TILE * 2);
           }
         } else if (s >= S_RZONE && s <= S_IZONE) {
@@ -1858,6 +2018,21 @@
     // Linien-Routen (Overlay „Linien“ oder während des Stopp-Klickens)
     if (overlay === 'lines' || transitPick !== null) drawLineRoutes(ox, oy, ts, z, now);
 
+    // Bezirke einfärben (Malwerkzeug aktiv oder Overlay „Bezirke“)
+    if (tool === 'district' || overlay === 'districts') {
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+        const i = sim.idx(x, y), d = sim.district[i];
+        if (!d) continue;
+        const sx = ox + x * ts, sy = oy + y * ts;
+        ctx.fillStyle = DISTRICT_COLORS[d % DISTRICT_COLORS.length];
+        ctx.globalAlpha = 0.28; ctx.fillRect(sx, sy, ts, ts); ctx.globalAlpha = 1;
+        // Grenzen zu anderen Bezirken markieren
+        ctx.fillStyle = DISTRICT_COLORS[d % DISTRICT_COLORS.length];
+        if (y === 0 || sim.district[i - sim.w] !== d) ctx.fillRect(sx, sy, ts, Math.max(1, z));
+        if (x === 0 || sim.district[i - 1] !== d) ctx.fillRect(sx, sy, Math.max(1, z), ts);
+      }
+    }
+
     // 7) Bau-Vorschau
     const tl = toolById[tool];
     if (tl.mode !== 'point' && (hover.x >= 0 || pendingTap) && !panning) {
@@ -1940,6 +2115,8 @@
 
     // 10) Flugzeuge zuletzt — sie fliegen über allem
     drawPlanes(ox, oy, ts, z);
+    // 11) Wetter (Schnee im Winter, Regen im Frühling/Herbst)
+    drawWeather(now);
 
     // Ambient-Sound: Wasseranteil im Bild + Verkehr
     if ((now | 0) % 1000 < 20) {
@@ -1966,6 +2143,8 @@
     else if (s === S_COAL || s === S_WIND || s === S_SOLAR || s === S_NUCLEAR) col = '#ff9e2c';
     else if (s === S_HOTEL || s === S_AMUSE || s === S_AIRPORT) col = '#e5679f';
     else if (s === S_LANDFILL || s === S_INCINER || s === S_RECYCLE) col = '#7a6a4a';
+    else if (s === S_TREATMENT) col = '#3f96b8';
+    else if (s === S_UNIVERSITY) col = '#c7cfdd';
     else if (s === S_RUBBLE) col = '#6b6257';
     else if (s !== S_NONE) col = '#f2f2ef';
     if (sim.burn[i] > 0 || sim.floodT[i] > 0) col = sim.burn[i] ? '#ff3030' : '#40a0ff';
@@ -2066,9 +2245,11 @@
         cell('🗑', t('ui.garbageLbl'), d.garbageProduced + '/' + d.garbageCap, d.garbageOverflow > 0) +
         cell('🚔', t('ui.crimeLbl'), d.avgCrime + '%', d.avgCrime > 45) +
         cell('🎓', t('ui.eduLbl'), d.eduLevel + '%') +
+        cell('❤️', t('ui.healthLbl'), sim.healthIndex + '%', sim.healthIndex < 45) +
         cell('🧳', t('ui.tourists'), d.tourists + '/' + d.touristCap) +
         cell('📦', t('ui.budgetExport'), '+' + d.exportBase + ' €') +
-        cell('🌐', t('diag.export'), d.ext);
+        cell('🌐', t('diag.export'), d.ext) +
+        cell('🗓', t('ui.seasonLbl'), t('season.' + sim.season) + (sim.dirtyWater ? ' · 💧✗' : ''), sim.dirtyWater);
     }
   }
 
@@ -2245,6 +2426,24 @@
   setInterval(() => { if (sim && !$('residentsPanel').classList.contains('hidden')) renderResidents(); }, 4000);
   setInterval(() => { if (sim && !$('statsPanel').classList.contains('hidden')) drawStats(); }, 2000);
 
+  // Bezirke-, Alarm- und Erfolge-Panel
+  $('btnDistricts').addEventListener('click', () => {
+    const p = $('districtsPanel'), show = p.classList.contains('hidden');
+    p.classList.toggle('hidden'); if (show) { selectTool('district'); renderDistricts(); } Sound.sfx.click();
+  });
+  $('btnDistrictsClose').addEventListener('click', () => $('districtsPanel').classList.add('hidden'));
+  $('btnAlerts').addEventListener('click', () => {
+    const p = $('alertsPanel'), show = p.classList.contains('hidden');
+    p.classList.toggle('hidden'); if (show) renderAlerts(); Sound.sfx.click();
+  });
+  $('btnAlertsClose').addEventListener('click', () => $('alertsPanel').classList.add('hidden'));
+  $('btnAch').addEventListener('click', () => {
+    const p = $('achPanel'), show = p.classList.contains('hidden');
+    p.classList.toggle('hidden'); if (show) renderAchievements(); Sound.sfx.click();
+  });
+  $('btnAchClose').addEventListener('click', () => $('achPanel').classList.add('hidden'));
+  $('chkWeather').addEventListener('change', (e) => { weatherEnabled = e.target.checked; });
+
   $('btnBudget').addEventListener('click', () => {
     updateBudgetPanel();
     $('budgetPanel').classList.toggle('hidden');
@@ -2327,6 +2526,13 @@
     $('polProBiz').checked = sim.policies.proBiz;
     $('polConserve').checked = sim.policies.conserve;
     $('polCulture').checked = sim.policies.culture;
+    $('chkWeather').checked = weatherEnabled;
+    // Ressort-Finanzierungsregler spiegeln
+    [['fundPolice', 'police'], ['fundFire', 'fire'], ['fundSchool', 'school'],
+     ['fundHealth', 'health'], ['fundPark', 'park']].forEach(([id, key]) => {
+      const v = Math.round(sim.funding[key] * 100);
+      $(id).value = v; $(id + 'Val').textContent = v + '%';
+    });
   }
 
   // Verordnungs-Checkboxen → sim.policies (Neuberechnung anstoßen)
@@ -2337,6 +2543,17 @@
       sim.policies[key] = e.target.checked;
       sim.dirtyPower = true; // Sparmaßnahmen ändern den Bedarf sofort
       Sound.sfx.click();
+    });
+  });
+
+  // Ressort-Finanzierungsregler → sim.funding (Abdeckung neu berechnen)
+  [['fundPolice', 'police'], ['fundFire', 'fire'], ['fundSchool', 'school'],
+   ['fundHealth', 'health'], ['fundPark', 'park']].forEach(([id, key]) => {
+    $(id).addEventListener('input', (e) => {
+      if (!sim) return;
+      sim.funding[key] = (+e.target.value) / 100;
+      sim.dirtyCov = true; sim.computeCoverage(); sim.computeCrime(); sim.computeStats();
+      $(id + 'Val').textContent = e.target.value + '%';
     });
   });
 

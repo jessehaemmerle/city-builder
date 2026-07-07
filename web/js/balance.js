@@ -106,6 +106,21 @@
       POLL_CUT_ERA: 0.85,            // … verstärkt ab dem Internet-Zeitalter
       ERA_YEAR: 2000,
       JOB_BONUS: 0.35,               // max. Zusatz-Jobs der Industrie
+      UNI_BOOST: 0.3,                // Bildungs-Ziel-Bonus je Universität (gedeckelt)
+    },
+
+    // Ressort-Finanzierung: Regler skalieren Abdeckung UND Unterhaltskosten
+    FUNDING: { MIN: 0.5, MAX: 1.5 },
+
+    // Jahreszeiten: Winter heizt (mehr Strom), Sommer (mehr Wasser, Tourismus-Hoch)
+    SEASON: {
+      WINTER_POWER_F: 1.20, SUMMER_WATER_F: 1.25,
+      SUMMER_TOUR_F: 1.25, WINTER_TOUR_F: 0.75,
+    },
+
+    // Gesundheit: Krankenhaus-Abdeckung hebt sie, Verschmutzung/Dreckwasser senken
+    HEALTH: {
+      BASE: 62, COV_F: 0.42, POLL_F: 0.55, DIRTY: 16, HAPPY_F: 0.10,
     },
 
     // Verordnungen: stadtweite Schalter mit monatlichen Kosten
@@ -145,6 +160,8 @@
       TOWER_SUPPLY: 100,     // Einheiten je Wasserturm
       PUMP_SUPPLY: 250,      // Einheiten je Pumpwerk (am Wasser)
       SHORT_HAPPY: 6,        // Zufriedenheits-Malus bei Wassermangel
+      DIRTY_POLL: 38,        // Verschmutzung am Pumpwerk → Dreckwasser
+      DIRTY_HAPPY: 8,        // Zufriedenheits-Malus bei verschmutztem Wasser
     },
 
     // Tourismus: Attraktionen locken Besucher, Hotels beherbergen sie.
@@ -159,7 +176,7 @@
       EXT_FULL: 1.0,         // mit Außenanbindung: voller Zustrom
       EXT_LOCAL: 0.3,        // ohne Anbindung: nur lokale Ausflügler
       ATTRACT: {             // Anziehungskraft je Attraktion
-        park: 4, stadium: 45, monument: 35, casino: 20, amuse: 70, airport: 40,
+        park: 4, stadium: 45, monument: 35, casino: 20, amuse: 70, airport: 40, university: 30,
       },
     },
 

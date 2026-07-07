@@ -101,6 +101,25 @@ bring deine Stadt vom Dorf zur Metropole.
   Rauchmelderpflicht (weniger Brände), Recyclingpflicht (weniger Müll),
   Wirtschaftsförderung (mehr G/I-Nachfrage), Sparmaßnahmen (weniger Strom-/Wasser­bedarf)
   und Kulturprogramm (mehr Zufriedenheit).
+- **💰 Ressort-Finanzierung**: Regler für Polizei, Feuerwehr, Schule, Gesundheit und
+  Parks (50–150 %). Mehr Geld = bessere Abdeckung, weniger = billiger, aber mehr
+  Kriminalität/Brände/Unzufriedenheit — das Budget-Panel wird zum Strategiewerkzeug.
+- **🗓 Wetter & Jahreszeiten**: Der Winter (❄️) hebt den Strombedarf (Heizen), der
+  Sommer (☀️) den Wasserbedarf und ist Tourismus-Hochsaison. Dazu sichtbarer Schnee
+  im Winter und Regen im Frühling/Herbst.
+- **💧 Wasserverschmutzung & Kläranlage**: Zieht ein Pumpwerk Wasser aus stark
+  belastetem Gewässer, wird das Trinkwasser schlecht (Zufriedenheits-/Gesundheits­malus)
+  — bis eine **Kläranlage** es reinigt.
+- **🎓 Universität & Gesundheit**: Die Universität hebt das Bildungsniveau stadtweit
+  im Eiltempo (und ist eine Attraktion). Ein **Gesundheitsindex** fasst Krankenhaus-
+  Abdeckung, Verschmutzung und Wasserqualität zusammen.
+- **☢️ Kernschmelze**, **🚢 Schiffe & ✈ Flugzeuge**, **👥 Einwohner-Panel** — siehe unten.
+- **🗺️ Bezirke**: Male benannte Stadtbezirke auf die Karte und sieh pro Bezirk
+  Einwohner, Landwert und Kriminalität — mit Sprung zum Bezirk.
+- **🔔 Ereignis-Protokoll**: Alle Meldungen (Brände, Brownouts, Meilensteine, Erfolge)
+  in einer Liste — ein Klick springt zum Ort des Geschehens.
+- **🏆 Erfolge**: Zehn Sammelziele (erste 1.000 Einwohner, saubere Stadt, Reiseziel,
+  Bildungshochburg, Metropole …) mit Geldbonus beim Freischalten.
 - **🚏 ÖPNV mit Linienverwaltung**: Baue Bus-Haltestellen, Bahnhöfe und
   U-Bahn-Stationen, lege im Linien-Panel eigene Linien an (benennen, Stopps
   per Klick auf der Karte hinzufügen, löschen). Busse fahren über Straßen,
@@ -149,6 +168,8 @@ bring deine Stadt vom Dorf zur Metropole.
   - *Wachstums-Sprint*: 1.000 Einwohner in 5 Jahren.
   - *Grüne Metropole*: 2.000 Einwohner + 55% Zufriedenheit ohne Kohlekraft in 10 Jahren.
   - *Die Pleite-Stadt*: Übernimm eine verschuldete Bestandsstadt und saniere sie.
+  - *Tourismus-Insel*: 2.500 Einwohner + 60% Zufriedenheit in 12 Jahren — vom Tourismus leben.
+  - *Metropole*: 5.000 Einwohner + 55% Zufriedenheit in 15 Jahren.
 
 ### Alleinstellungsmerkmale
 

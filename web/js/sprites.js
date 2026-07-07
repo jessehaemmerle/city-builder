@@ -496,6 +496,54 @@ const Sprites = (() => {
     return c;
   }
 
+  // ---------- Kläranlage 32x32 (runde Klärbecken) ----------
+  function treatmentSprite() {
+    const c = cv(32, 32), x = c.getContext('2d');
+    x.fillStyle = P.A; x.fillRect(0, 0, 32, 32);              // Betonfläche
+    x.fillStyle = '#4a4a52'; for (let i = 0; i < 32; i += 8) x.fillRect(0, i, 32, 1);
+    const tank = (cx0, cy0, r) => {
+      for (let j = -r; j <= r; j++) for (let i = -r; i <= r; i++) {
+        const d = Math.sqrt(i * i + j * j);
+        if (d > r) continue;
+        x.fillStyle = d > r - 1.1 ? P.M : (d > r * 0.55 ? '#2f6fc4' : '#3f96b8');
+        x.fillRect(cx0 + i, cy0 + j, 1, 1);
+      }
+      x.fillStyle = P.m; x.fillRect(cx0 - r, cy0, r * 2 + 1, 1); // Räumerbrücke
+      x.fillStyle = P.K; x.fillRect(cx0 - 1, cy0 - 1, 2, 2);     // Mittelachse
+    };
+    tank(9, 10, 7); tank(22, 21, 8);
+    x.fillStyle = P.M; x.fillRect(9, 17, 2, 7); x.fillRect(11, 10, 8, 2); // Rohre
+    x.fillStyle = 'rgba(0,0,0,0.25)'; x.fillRect(0, 31, 32, 1);
+    return c;
+  }
+
+  // ---------- Universität 32x32 (Säulenbau mit Giebel) ----------
+  function universitySprite() {
+    const c = cv(32, 32), x = c.getContext('2d');
+    x.fillStyle = P.e; x.fillRect(0, 24, 32, 8);             // Rasen
+    x.fillStyle = P.E; for (let i = 0; i < 20; i++) x.fillRect((i * 11) % 32, 24 + (i * 5) % 8, 1, 1);
+    x.fillStyle = P.s; x.fillRect(13, 26, 6, 6);            // Weg zum Eingang
+    // Hauptgebäude
+    x.fillStyle = P.w; x.fillRect(4, 11, 24, 15);
+    x.fillStyle = P.K; x.fillRect(4, 25, 24, 1);
+    x.fillStyle = P.g; x.fillRect(4, 11, 24, 1);
+    // Giebel (Dreieck)
+    for (let row = 0; row < 6; row++) {
+      const w = 4 + row * 4;
+      x.fillStyle = P.r; x.fillRect(16 - (w >> 1), 5 + row, w, 1);
+    }
+    x.fillStyle = P.y; x.fillRect(15, 8, 2, 2); x.fillStyle = P.K; x.fillRect(15, 8, 1, 1); // Uhr
+    // Säulen
+    for (let px = 6; px < 27; px += 4) {
+      x.fillStyle = P.W; x.fillRect(px, 13, 2, 12);
+      x.fillStyle = P.g; x.fillRect(px + 1, 13, 1, 12);
+    }
+    x.fillStyle = P.W; x.fillRect(4, 12, 24, 1); x.fillRect(4, 24, 24, 1); // Gesimse
+    x.fillStyle = P.N; x.fillRect(14, 20, 4, 5);            // Eingangstür
+    x.fillStyle = 'rgba(0,0,0,0.25)'; x.fillRect(0, 31, 32, 1);
+    return c;
+  }
+
   // ---------- Frachtschiff 16x16 (zeigt nach Norden, wird gedreht) ----------
   function shipSprite() {
     const c = cv(16, 16), x = c.getContext('2d');
@@ -1524,6 +1572,8 @@ const Sprites = (() => {
     store.nuclear = nuclearSprite();
     store.ship = shipSprite();
     store.plane = planeSprite();
+    store.treatment = treatmentSprite();
+    store.university = universitySprite();
     store.fire = [fireTile(0), fireTile(1), fireTile(2)];
     store.smoke = [smokeTile(0), smokeTile(1)];
     store.tornado = [TORNADO0, TORNADO1];

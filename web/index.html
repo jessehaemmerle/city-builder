@@ -54,6 +54,7 @@
     <option value="health" data-i18n="ui.ovHealth"></option>
     <option value="park" data-i18n="ui.ovPark"></option>
     <option value="crime" data-i18n="ui.ovCrime"></option>
+    <option value="districts" data-i18n="ui.ovDistricts"></option>
   </select>
 
   <div class="group">
@@ -61,6 +62,9 @@
     <button class="btn" id="btnBbs" title="RETRO-NET BBS">📟</button>
     <button class="btn" id="btnCamera">📸</button>
     <button class="btn" id="btnResidents" title="Einwohner">👥</button>
+    <button class="btn" id="btnDistricts" title="Bezirke">🗺️</button>
+    <button class="btn" id="btnAlerts" title="Ereignisse">🔔</button>
+    <button class="btn" id="btnAch" title="Erfolge">🏆</button>
     <button class="btn" id="btnStats">📈</button>
     <button class="btn" id="btnSfx">🔊</button>
     <button class="btn" id="btnMusic">🎵</button>
@@ -118,6 +122,14 @@
     <label class="row"><input type="checkbox" id="polConserve"> <span data-i18n="ui.pol.conserve"></span><small data-i18n="ui.pol.conserveTip"></small></label>
     <label class="row"><input type="checkbox" id="polCulture"> <span data-i18n="ui.pol.culture"></span><small data-i18n="ui.pol.cultureTip"></small></label>
   </div>
+  <h3 data-i18n="ui.funding" style="margin:8px 0 2px"></h3>
+  <div id="fundingList">
+    <label class="fundRow"><span data-i18n="t.police"></span> <b id="fundPoliceVal">100%</b><input type="range" id="fundPolice" min="50" max="150" value="100"></label>
+    <label class="fundRow"><span data-i18n="t.firedep"></span> <b id="fundFireVal">100%</b><input type="range" id="fundFire" min="50" max="150" value="100"></label>
+    <label class="fundRow"><span data-i18n="t.school"></span> <b id="fundSchoolVal">100%</b><input type="range" id="fundSchool" min="50" max="150" value="100"></label>
+    <label class="fundRow"><span data-i18n="t.hospital"></span> <b id="fundHealthVal">100%</b><input type="range" id="fundHealth" min="50" max="150" value="100"></label>
+    <label class="fundRow"><span data-i18n="t.park"></span> <b id="fundParkVal">100%</b><input type="range" id="fundPark" min="50" max="150" value="100"></label>
+  </div>
   <label class="row"><span data-i18n="ui.tax"></span>: <b id="taxVal">9%</b>
     <input type="range" id="taxSlider" min="0" max="20" value="9">
   </label>
@@ -129,6 +141,7 @@
   </label>
   <label class="row"><input type="checkbox" id="chkDisaster" checked> <span data-i18n="ui.disasters"></span></label>
   <label class="row"><input type="checkbox" id="chkNight" checked> <span data-i18n="ui.night"></span></label>
+  <label class="row"><input type="checkbox" id="chkWeather" checked> <span data-i18n="ui.weather"></span></label>
   <label class="row"><input type="checkbox" id="chkCrt" checked> <span data-i18n="ui.crt"></span></label>
   <label class="row"><input type="checkbox" id="chkTouchConfirm"> <span data-i18n="ui.touchConfirm"></span></label>
   <label class="row"><span data-i18n="ui.lang"></span>
@@ -157,6 +170,27 @@
     <button class="btn" id="btnResidentsRefresh" data-i18n="res.refresh"></button>
     <button class="btn" id="btnResidentsClose" data-i18n="ui.close"></button>
   </div>
+</div>
+
+<!-- Bezirke -->
+<div id="districtsPanel" class="panel dialog hidden">
+  <h2 data-i18n="dist.title"></h2>
+  <div id="districtsList"></div>
+  <div class="row right"><button class="btn" id="btnDistrictsClose" data-i18n="ui.close"></button></div>
+</div>
+
+<!-- Ereignis-/Alarm-Panel -->
+<div id="alertsPanel" class="panel dialog hidden">
+  <h2 data-i18n="alerts.title"></h2>
+  <div id="alertsList" class="resList"></div>
+  <div class="row right"><button class="btn" id="btnAlertsClose" data-i18n="ui.close"></button></div>
+</div>
+
+<!-- Erfolge -->
+<div id="achPanel" class="panel dialog hidden">
+  <h2 data-i18n="ach.title"></h2>
+  <div id="achList"></div>
+  <div class="row right"><button class="btn" id="btnAchClose" data-i18n="ui.close"></button></div>
 </div>
 
 <!-- Berater -->
