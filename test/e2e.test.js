@@ -202,6 +202,39 @@ function check(name, cond) {
   await page.click('#btnBudgetClose');
   await page.waitForTimeout(100);
 
+  // Schiffe & Flugzeuge: Wasserbecken + Hafen + Flughafen in einer Ecke
+  // (die Stadt in der Kartenmitte bleibt unberührt), dann spawnen
+  const fleet = await page.evaluate(() => {
+    const S = window.RETRO, s = S.sim;
+    s.money = 9e6; s.year = 1997;
+    for (let y = 2; y <= 11; y++) for (let x = 2; x <= 11; x++) { s.terr[s.idx(x, y)] = 1; s.st[s.idx(x, y)] = 0; s.anchor[s.idx(x, y)] = -1; }
+    for (let y = 4; y <= 9; y++) for (let x = 12; x <= 16; x++) { s.terr[s.idx(x, y)] = 0; s.st[s.idx(x, y)] = 0; s.anchor[s.idx(x, y)] = -1; }
+    const put = (id, x, y, sz) => { sz = sz || 1; const a = s.idx(x, y); for (let dy = 0; dy < sz; dy++) for (let dx = 0; dx < sz; dx++) { const j = s.idx(x + dx, y + dy); s.st[j] = id; s.anchor[j] = a; } };
+    put(25, 12, 5, 2); put(33, 14, 7, 2); // Hafen am Ufer + Flughafen
+    s.allChanged = true; s.year = 1990;
+    let sh = 0, pl = 0;
+    for (let k = 0; k < 8; k++) { if (S.spawnShip()) sh++; if (S.spawnPlane()) pl++; }
+    return { sh, pl, shipCount: S.shipCount, planeCount: S.planeCount };
+  });
+  await page.waitForTimeout(300);
+  check('Schiffe fahren auf dem Wasser (' + fleet.shipCount + ')', fleet.shipCount >= 1);
+  check('Flugzeuge fliegen über die Karte (' + fleet.planeCount + ')', fleet.planeCount >= 1);
+
+  // Einwohner-Panel
+  await page.click('#btnResidents');
+  await page.waitForTimeout(300);
+  const resOpen = await page.evaluate(() => !document.getElementById('residentsPanel').classList.contains('hidden')
+    && document.querySelectorAll('#residentsList .resSummary').length === 1);
+  check('Einwohner-Panel mit Demografie offen', resOpen);
+  await page.click('#btnResidentsClose');
+
+  // Statistik-Dashboard
+  await page.click('#btnStats');
+  await page.waitForTimeout(300);
+  const dashCells = await page.evaluate(() => document.querySelectorAll('#statsDash .dashCell').length);
+  check('Stadt-Dashboard mit Kennzahlen (' + dashCells + ')', dashCells >= 8);
+  await page.click('#btnStatsClose');
+
   // Simulation laufen lassen
   await page.click('#spd3');
   await page.waitForTimeout(10000);

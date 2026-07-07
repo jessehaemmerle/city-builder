@@ -41,7 +41,10 @@
   // Fahrzeuge (rein visuell)
   let cars = [];
   let trains = [];
+  let ships = [];   // fahren auf dem Wasser (bei Häfen)
+  let planes = [];  // fliegen über die Karte (bei Flughäfen)
   let lastCarSpawn = 0;
+  let lastAirSpawn = 0;
 
   // Berater
   const advisorQueue = [];
@@ -327,10 +330,83 @@
     let mood = 'cit.mood.happy';
     if (!sim.powered[i]) mood = 'cit.mood.power';
     else if (sim.lvl[i] >= 2 && sim.covWater[i] < 20) mood = 'cit.mood.water';
+    else if (sim.crime[i] > 55) mood = 'cit.mood.crime';
     else if (sim.poll[i] > 30) mood = 'cit.mood.poll';
     else if (sim.jamNear[i] > 70) mood = 'cit.mood.jam';
     else if (sim.covPark[i] < 10) mood = 'cit.mood.park';
-    return { name, age, jobKey, workXY, mood, commute: sim.commuteDist[i] };
+    // Wohlstand aus Landwert + Wohn-Level
+    const wv = sim.landv[i] + sim.lvl[i] * 6;
+    const wealthKey = wv > 70 ? 'cit.wealth.rich' : wv > 42 ? 'cit.wealth.mid' : 'cit.wealth.poor';
+    return { name, age, jobKey, workXY, mood, wealthKey, home: i, x: i % sim.w, y: (i / sim.w) | 0,
+      commute: sim.commuteDist[i] };
+  }
+
+  // Stadtweite Kennzahlen (für Einwohner-Panel, Dashboard, Debug-API)
+  function citySummary() {
+    const s = sim;
+    if (!s) return null;
+    const workers = Math.round(s.pop * BAL.DEMAND.WORKER_SHARE);
+    return {
+      pop: s.pop, jobs: s.jobs, cJobs: s.cJobs, iJobs: s.iJobs,
+      workers, employed: Math.min(workers, s.jobs), unemployed: Math.max(0, workers - s.jobs),
+      happiness: s.happiness, econ: s.econ,
+      tourists: s.tourists, touristCap: s.touristCap,
+      garbageProduced: s.garbageProduced, garbageCap: s.garbageCap, garbageOverflow: s.garbageOverflow,
+      avgCrime: Math.round(s.avgCrime), eduLevel: Math.round(s.eduLevel * 100),
+      exportBase: Math.round(s.exportBase),
+      power: { need: s.powerNeed, supply: s.powerSupply },
+      water: { need: s.waterNeed, supply: s.waterSupply },
+      ext: s.extRoadTotal + s.extRailTotal + s.extHwyTotal + s.portTotal + s.airportTotal,
+    };
+  }
+
+  // Kamera auf eine Kachel zentrieren (für Sprünge aus Panels)
+  function centerOnTile(x, y) {
+    if (!sim) return;
+    cam.x = (x + 0.5) * TILE - canvas.width / cam.zoom / 2;
+    cam.y = (y + 0.5) * TILE - canvas.height / cam.zoom / 2;
+    clampCam();
+  }
+
+  // ---------- Einwohner-Panel: Demografie + Stichprobe echter Bürger:innen ----------
+  function renderResidents() {
+    if (!sim) return;
+    const sum = citySummary();
+    const homes = [];
+    for (let i = 0; i < sim.w * sim.h; i++) if (sim.st[i] === S_RZONE && sim.lvl[i] > 0) homes.push(i);
+    const face = sum.happiness > 66 ? '😀' : sum.happiness > 40 ? '🙂' : sum.happiness > 20 ? '😐' : '😠';
+    let html = '<div class="resSummary">' +
+      '<div>👤 <b>' + sum.pop + '</b> ' + t('ui.pop') + '</div>' +
+      '<div>' + face + ' ' + sum.happiness + '% ' + t('ui.happy') + '</div>' +
+      '<div>💼 ' + sum.employed + '/' + sum.workers + ' ' + t('res.employed') + '</div>' +
+      '<div>🚧 ' + sum.unemployed + ' ' + t('res.unemployed') + '</div>' +
+      '<div>🎓 ' + sum.eduLevel + '% ' + t('ui.eduLbl') + '</div>' +
+      '<div>🧳 ' + sum.tourists + ' ' + t('ui.tourists') + '</div>' +
+      '</div>';
+    if (!homes.length) html += '<div class="resEmpty">' + t('res.none') + '</div>';
+    else {
+      // Stichprobe ziehen
+      const pool = homes.slice(), sample = [];
+      for (let k = 0; k < 10 && pool.length; k++) sample.push(pool.splice((Math.random() * pool.length) | 0, 1)[0]);
+      html += '<div class="resHint">' + t('res.hint') + '</div><div class="resList">';
+      for (const i of sample) {
+        const c = citizenOf(i);
+        if (!c) continue;
+        html += '<div class="resRow" data-x="' + c.x + '" data-y="' + c.y + '">' +
+          '<b>' + c.name + '</b> <span class="resMeta">· ' + t('cit.age', { n: c.age }) + ' · ' + t(c.wealthKey) + '</span><br>' +
+          '<span class="resMeta">' + t(c.jobKey) +
+          (c.commute >= 0 && c.jobKey !== 'cit.job.none' ? ' · ' + t('cit.commute', { n: c.commute }) : '') +
+          ' · 🏠 ' + c.x + ',' + c.y + '</span> <span class="resMood">„' + t(c.mood) + '“</span></div>';
+      }
+      html += '</div>';
+    }
+    $('residentsList').innerHTML = html;
+    $('residentsList').querySelectorAll('.resRow').forEach(row => {
+      row.addEventListener('click', () => {
+        const x = +row.dataset.x, y = +row.dataset.y;
+        selectTool('point'); selectTile(x, y); centerOnTile(x, y); Sound.sfx.click();
+      });
+    });
   }
 
   function randomCitizen() {
@@ -872,6 +948,35 @@
     $('infoPanel').classList.remove('hidden');
   }
 
+  // Abdeckungsradien (nur zur Anzeige — Werte aus computeCoverage)
+  const COV_RADIUS = {
+    [S_POLICE]: 10, [S_FIREDEP]: 9, [S_SCHOOL]: 8, [S_HOSPITAL]: 10,
+    [S_PARK]: 5, [S_STADIUM]: 12, [S_AMUSE]: 11, [S_TOWNHALL]: 8, [S_MONUMENT]: 10,
+  };
+  // Erklärtext + Live-Beiträge eines Gebäudes (Transparenz im Info-Panel)
+  function buildingDetails(s, i) {
+    const def = DEFS[s];
+    if (!def) return '';
+    let out = '';
+    const dk = 'desc.' + def.name.slice(2), dtxt = t(dk);
+    if (dtxt !== dk) out += '<div class="infoDesc">' + dtxt + '</div>';
+    const L = [], anchor = sim.isAnchor(i);
+    if (sim.isPlant(s) && anchor) L.push('⚡ ' + t('info.powerOut') + ' +' + (s === S_SOLAR ? sim.solarPower() : def.power));
+    if ((s === S_WTOWER || s === S_PUMP) && anchor) L.push('🚰 ' + t('info.waterOut') + ' +' + (s === S_PUMP ? BAL.WATER.PUMP_SUPPLY : BAL.WATER.TOWER_SUPPLY));
+    if (COV_RADIUS[s] && anchor) L.push('📡 ' + t('info.radius') + ' ' + COV_RADIUS[s]);
+    if (s === S_LANDFILL && anchor) L.push('🗑 +' + BAL.GARBAGE.LANDFILL_CAP + ' ' + t('info.garbCap'));
+    if (s === S_INCINER) L.push('🗑 +' + BAL.GARBAGE.INCINER_CAP + ' ' + t('info.garbCap'));
+    if (s === S_RECYCLE) L.push('♻ −' + BAL.GARBAGE.RECYCLE_CUT + ' ' + t('info.garbCut'));
+    if (s === S_PORT && anchor) L.push('⚓ ' + t('info.exportCap') + ' +' + BAL.ECONOMY.CAP_PORT);
+    if (s === S_AIRPORT && anchor) L.push('✈ ' + t('info.exportCap') + ' +' + BAL.ECONOMY.CAP_AIR);
+    if (s === S_HIGHWAY) L.push('🛣 ' + t('info.exportCap') + ' +' + BAL.ECONOMY.CAP_HIGHWAY);
+    if (s === S_CASINO && sim.powered[i]) L.push('€ +' + DEFS[S_CASINO].income + '/Mon');
+    if (def.drain && anchor) L.push('⚡ −' + def.drain + ' ' + t('info.powerUse'));
+    if (def.upkeep && anchor) L.push('🔧 −' + def.upkeep + ' €/Mon');
+    if (L.length) out += '<div class="infoStats">' + L.join(' · ') + '</div>';
+    return out;
+  }
+
   function updateInfoPanel() {
     if (!selected) return;
     const { x, y } = selected;
@@ -905,6 +1010,8 @@
           '<div style="color:#9aa3d6">' + t('ui.budgetTourism') + ': +' +
           Math.round(sim.tourists * BAL.TOURISM.SPEND) + ' €/Mon.</div>';
       }
+      // Erklärtext + Live-Beiträge des Gebäudes
+      extra += buildingDetails(s, i);
     }
     let html = '<h3>' + name + '</h3>' +
       '<div>' + t('ui.pos') + ': ' + x + ', ' + y + '</div>' + extra;
@@ -1034,6 +1141,65 @@
     return true;
   }
 
+  // ---------- Schiffe (Wasser) & Flugzeuge (Luft): rein visuell ----------
+  function isWater(x, y) {
+    const xi = x | 0, yi = y | 0;
+    return sim.inMap(xi, yi) && sim.terr[sim.idx(xi, yi)] === T_WATER;
+  }
+  function countAnchors(kind) {
+    let n = 0;
+    for (let i = 0; i < sim.w * sim.h; i++) if (sim.st[i] === kind && sim.anchor[i] === i) n++;
+    return n;
+  }
+  function trySpawnShip() {
+    const ports = [];
+    for (let i = 0; i < sim.w * sim.h; i++) if (sim.st[i] === S_PORT && sim.anchor[i] === i) ports.push(i);
+    if (!ports.length) return false;
+    const p = ports[(Math.random() * ports.length) | 0];
+    const px = p % sim.w, py = (p / sim.w) | 0;
+    const spots = [];
+    for (let dy = -2; dy <= 3; dy++) for (let dx = -2; dx <= 3; dx++)
+      if (isWater(px + dx, py + dy)) spots.push([px + dx, py + dy]);
+    if (!spots.length) return false;
+    const [sx, sy] = spots[(Math.random() * spots.length) | 0];
+    ships.push({ x: sx + 0.5, y: sy + 0.5, ang: Math.random() * Math.PI * 2, ttl: 500 + Math.random() * 400 });
+    return true;
+  }
+  function trySpawnPlane() {
+    if (countAnchors(S_AIRPORT) === 0) return false;
+    const W = sim.w, H = sim.h, edge = (Math.random() * 4) | 0;
+    const spd = 1.6 + Math.random() * 1.0, drift = (Math.random() - 0.5) * 0.5;
+    let x, y, vx, vy;
+    if (edge === 0) { x = Math.random() * W; y = -1.5; vx = drift; vy = spd; }
+    else if (edge === 1) { x = W + 1.5; y = Math.random() * H; vx = -spd; vy = drift; }
+    else if (edge === 2) { x = Math.random() * W; y = H + 1.5; vx = drift; vy = -spd; }
+    else { x = -1.5; y = Math.random() * H; vx = spd; vy = drift; }
+    planes.push({ x, y, vx, vy });
+    return true;
+  }
+  function updateShips(dt, spdF) {
+    const step = dt * 0.9 * spdF;
+    ships = ships.filter(s => {
+      s.ttl -= dt * spdF;
+      if (s.ttl <= 0) return false;
+      const nx = s.x + Math.cos(s.ang) * step, ny = s.y + Math.sin(s.ang) * step;
+      if (isWater(nx + Math.cos(s.ang) * 0.6, ny + Math.sin(s.ang) * 0.6)) { s.x = nx; s.y = ny; return true; }
+      // Kurs ändern, bis wieder Wasser vor dem Bug liegt
+      for (let k = 0; k < 10; k++) {
+        const a = Math.random() * Math.PI * 2;
+        if (isWater(s.x + Math.cos(a) * 1.3, s.y + Math.sin(a) * 1.3)) { s.ang = a; return true; }
+      }
+      return false; // eingekesselt
+    });
+  }
+  function updatePlanes(dt, spdF) {
+    const step = dt * spdF, W = sim.w, H = sim.h;
+    planes = planes.filter(p => {
+      p.x += p.vx * step; p.y += p.vy * step;
+      return p.x > -4 && p.y > -4 && p.x < W + 4 && p.y < H + 4;
+    });
+  }
+
   function updateVehicles(dt) {
     if (!sim || speed === 0) return;
     const spdF = [0, 1, 1.6, 2.4][speed];
@@ -1087,6 +1253,18 @@
     // Sobald echte Zug-Linien fahren, verschwindet der Zufalls-Zug
     if (sim.lines.some(l => l.type === 'train' && l.active)) trains = [];
     updateLineVehicles(dt, spdF);
+
+    // Schiffe & Flugzeuge nach Bedarf einsetzen (gedrosselt)
+    const now2 = performance.now();
+    if (now2 - lastAirSpawn > 1400) {
+      lastAirSpawn = now2;
+      const portTarget = Math.min(8, countAnchors(S_PORT) * 2);
+      if (ships.length < portTarget) trySpawnShip();
+      const airTarget = Math.min(5, countAnchors(S_AIRPORT) * 2);
+      if (planes.length < airTarget) trySpawnPlane();
+    }
+    updateShips(dt, spdF);
+    updatePlanes(dt, spdF);
   }
 
   // ---------- Linienfahrzeuge: Busse & Züge pendeln auf ihrer Route ----------
@@ -1278,6 +1456,42 @@
         ctx.fillRect(cx - 3 * z, cy - 2 * z, 6 * z, 4 * z);
         if (k === 0) { ctx.fillStyle = '#f0d95c'; ctx.fillRect(cx - z, cy - z, 2 * z, 2 * z); }
       });
+    }
+  }
+
+  // Schiffe: Sprite in Fahrtrichtung gedreht, mit heller Bugwelle
+  function drawShips(ox, oy, ts, z) {
+    const spr = Sprites.store.ship;
+    if (!spr) return;
+    for (const s of ships) {
+      const cx = ox + s.x * ts, cy = oy + s.y * ts, sz = ts * 0.95;
+      // Bugwelle
+      ctx.fillStyle = 'rgba(220,240,255,0.5)';
+      ctx.fillRect(cx - Math.cos(s.ang) * ts * 0.4 - z, cy - Math.sin(s.ang) * ts * 0.4 - z, 2 * z, 2 * z);
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(s.ang + Math.PI / 2); // Sprite zeigt nach Norden
+      ctx.drawImage(spr, -sz / 2, -sz / 2, sz, sz);
+      ctx.restore();
+    }
+  }
+
+  // Flugzeuge: Bodenschatten + Flieger in Höhe, in Flugrichtung gedreht
+  function drawPlanes(ox, oy, ts, z) {
+    const spr = Sprites.store.plane;
+    if (!spr) return;
+    for (const p of planes) {
+      const ang = Math.atan2(p.vy, p.vx) + Math.PI / 2;
+      const gx = ox + p.x * ts, gy = oy + p.y * ts, sz = ts * 1.1, alt = ts * 0.7;
+      // Schatten am Boden (dunkler Fleck)
+      ctx.fillStyle = 'rgba(0,0,0,0.20)';
+      ctx.beginPath();
+      ctx.ellipse(gx, gy, ts * 0.4, ts * 0.22, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // Flieger darüber, in Flugrichtung gedreht
+      ctx.save(); ctx.translate(gx, gy - alt); ctx.rotate(ang);
+      ctx.drawImage(spr, -sz / 2, -sz / 2, sz, sz);
+      ctx.restore();
     }
   }
 
@@ -1559,7 +1773,8 @@
       }
     }
 
-    // 4) Fahrzeuge
+    // 4) Fahrzeuge (Schiffe auf dem Wasser zuerst, dann Land)
+    drawShips(ox, oy, ts, z);
     drawVehicles(ox, oy, ts, z, isNight);
     drawLineVehicles(ox, oy, ts, z, isNight);
 
@@ -1687,8 +1902,23 @@
       }
     }
 
-    // 8) Auswahl-Rahmen
+    // 8) Auswahl-Rahmen + Pendelweg (Haus → Arbeitsplatz)
     if (selected && tool === 'point') {
+      const si = sim.idx(selected.x, selected.y);
+      if (sim.st[si] === S_RZONE && sim.lvl[si] > 0 && sim.workOf[si] >= 0) {
+        const w = sim.workOf[si], wx = w % sim.w, wy = (w / sim.w) | 0;
+        ctx.strokeStyle = blink ? '#7ae0ff' : '#4f8fdc';
+        ctx.lineWidth = Math.max(1.5, z * 0.9);
+        ctx.setLineDash([5 * z, 3 * z]);
+        ctx.beginPath();
+        ctx.moveTo(ox + (selected.x + 0.5) * ts, oy + (selected.y + 0.5) * ts);
+        ctx.lineTo(ox + (wx + 0.5) * ts, oy + (wy + 0.5) * ts);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        // Arbeitsplatz markieren
+        ctx.strokeStyle = '#7ae0a0'; ctx.lineWidth = 2;
+        ctx.strokeRect(ox + wx * ts + 1, oy + wy * ts + 1, ts - 2, ts - 2);
+      }
       ctx.strokeStyle = blink ? '#fff' : '#f0d95c';
       ctx.lineWidth = 2;
       ctx.strokeRect(ox + selected.x * ts + 1, oy + selected.y * ts + 1, ts - 2, ts - 2);
@@ -1707,6 +1937,9 @@
       ctx.fillStyle = 'hsla(' + ((now / 4) % 360) + ',95%,60%,0.16)';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
+
+    // 10) Flugzeuge zuletzt — sie fliegen über allem
+    drawPlanes(ox, oy, ts, z);
 
     // Ambient-Sound: Wasseranteil im Bild + Verkehr
     if ((now | 0) % 1000 < 20) {
@@ -1819,6 +2052,24 @@
       el.textContent = sim.sandbox ? t('ui.scenSandbox') : t('ui.scenFree');
     }
     if (sim.cheated) el.textContent += ' · ' + t('cheat.shame');
+
+    // Stadt-Dashboard: alle wichtigen Kennzahlen auf einen Blick
+    const d = citySummary();
+    if (d) {
+      const cell = (icon, label, val, bad) =>
+        '<div class="dashCell' + (bad ? ' bad' : '') + '"><span>' + icon + ' ' + label + '</span><b>' + val + '</b></div>';
+      $('statsDash').innerHTML =
+        cell('💼', t('res.employed'), d.employed + '/' + d.workers) +
+        cell('🚧', t('res.unemployed'), d.unemployed, d.unemployed > d.workers * 0.15) +
+        cell('⚡', t('ui.powerLbl'), d.power.need + '/' + d.power.supply, d.power.need > d.power.supply) +
+        cell('🚰', t('ui.waterLbl'), d.water.need + '/' + d.water.supply, d.water.need > d.water.supply) +
+        cell('🗑', t('ui.garbageLbl'), d.garbageProduced + '/' + d.garbageCap, d.garbageOverflow > 0) +
+        cell('🚔', t('ui.crimeLbl'), d.avgCrime + '%', d.avgCrime > 45) +
+        cell('🎓', t('ui.eduLbl'), d.eduLevel + '%') +
+        cell('🧳', t('ui.tourists'), d.tourists + '/' + d.touristCap) +
+        cell('📦', t('ui.budgetExport'), '+' + d.exportBase + ' €') +
+        cell('🌐', t('diag.export'), d.ext);
+    }
   }
 
   // ---------- Speichern / Slots ----------
@@ -1981,6 +2232,17 @@
     Sound.sfx.click();
   });
   $('btnStatsClose').addEventListener('click', () => $('statsPanel').classList.add('hidden'));
+
+  $('btnResidents').addEventListener('click', () => {
+    const panel = $('residentsPanel');
+    const show = panel.classList.contains('hidden');
+    panel.classList.toggle('hidden');
+    if (show) renderResidents();
+    Sound.sfx.click();
+  });
+  $('btnResidentsClose').addEventListener('click', () => $('residentsPanel').classList.add('hidden'));
+  $('btnResidentsRefresh').addEventListener('click', () => { renderResidents(); Sound.sfx.click(); });
+  setInterval(() => { if (sim && !$('residentsPanel').classList.contains('hidden')) renderResidents(); }, 4000);
   setInterval(() => { if (sim && !$('statsPanel').classList.contains('hidden')) drawStats(); }, 2000);
 
   $('btnBudget').addEventListener('click', () => {
@@ -2406,7 +2668,7 @@
   function startGame(simInstance, fromSave) {
     sim = simInstance;
     undoStack.length = 0; redoStack.length = 0;
-    cars = []; trains = [];
+    cars = []; trains = []; ships = []; planes = [];
     lineVeh.clear();
     transitPick = null;
     $('transitPanel').classList.add('hidden');
@@ -2486,6 +2748,10 @@
     loadSlot, startGame, buildScenario, SCENARIOS,
     shareLink, tryImportCode, citizenOf, renderPostcard,
     get newsFeed() { return newsFeed; },
+    get shipCount() { return ships.length; },
+    get planeCount() { return planes.length; },
+    spawnShip: trySpawnShip, spawnPlane: trySpawnPlane,
+    citySummary,
   };
 
   boot();

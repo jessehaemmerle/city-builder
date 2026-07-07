@@ -182,6 +182,31 @@ select.btn { padding: 3px 4px; }
 #policyList label { display: flex; align-items: baseline; gap: 6px; margin: 3px 0; }
 #policyList small { color: #9aa3d6; font-size: 10px; margin-left: auto; text-align: right; }
 
+/* ---------- Info-Panel: Beschreibung + Beiträge ---------- */
+.infoDesc { color: #b9c0e0; font-size: 11px; margin: 4px 0 2px; line-height: 1.35; }
+.infoStats { color: #f0d95c; font-size: 11px; margin: 2px 0; }
+
+/* ---------- Stadt-Dashboard (Statistik-Panel) ---------- */
+.dashGrid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; margin: 8px 0; }
+.dashCell { display: flex; justify-content: space-between; gap: 6px; font-size: 12px;
+  padding: 4px 6px; background: #1c1f30; border: 1px solid #2e3350; border-radius: 3px; }
+.dashCell span { color: #9aa3d6; }
+.dashCell.bad { border-color: #7a2a34; }
+.dashCell.bad b { color: #ff6b6b; }
+
+/* ---------- Einwohner-Panel ---------- */
+#residentsPanel { width: 340px; max-width: 92vw; }
+.resSummary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 3px 10px;
+  font-size: 12px; margin-bottom: 6px; }
+.resHint { color: #9aa3d6; font-size: 10px; margin-bottom: 4px; }
+.resList { max-height: 300px; overflow-y: auto; }
+.resRow { padding: 5px 6px; margin: 3px 0; background: #1c1f30; border: 1px solid #2e3350;
+  border-radius: 3px; cursor: pointer; font-size: 12px; line-height: 1.35; }
+.resRow:hover { background: #262a40; border-color: #4f8fdc; }
+.resMeta { color: #9aa3d6; font-size: 11px; }
+.resMood { color: #e39ac2; font-size: 11px; }
+.resEmpty { color: #9aa3d6; font-size: 12px; padding: 8px 0; }
+
 .hidden { display: none !important; }
 
 /* ---------- Kredit-Zeile ---------- */

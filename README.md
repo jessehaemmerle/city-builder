@@ -158,9 +158,14 @@ bring deine Stadt vom Dorf zur Metropole.
 - **📟 RETRO-NET BBS**: Ein 90er-Mailbox-Terminal (mit Modem-Einwahlgeräusch!)
   zum Veröffentlichen und Einwählen von Stadt-Codes, mit lokaler Rekordliste
   und der Zeitung.
-- **Benannte Bürger:innen**: Jedes bewohnte Haus hat einen deterministisch
-  generierten Beispiel-Haushalt — Name, Alter, Arbeitsplatz, echter Pendelweg
-  aus der Wegfindung und aktuelle Laune. Autos anklicken verrät, wer da fährt.
+- **👥 Nachvollziehbare Bürger:innen**: Jedes bewohnte Haus hat einen
+  deterministisch generierten Haushalt — Name, Alter, **Wohlstand** (aus dem
+  Landwert), Arbeitsplatz, echter Pendelweg aus der Wegfindung und eine Laune,
+  die den tatsächlichen Zustand widerspiegelt („…dauernd Stromausfall"). Das
+  neue **Einwohner-Panel** (👥) zeigt Demografie (beschäftigt/arbeitslos,
+  Bildung, Tourismus) plus eine Stichprobe echter Bürger:innen — ein Klick
+  springt zu ihrem Zuhause. Wählt man ein Wohnhaus aus, zeichnet die Karte den
+  **Pendelweg zum Arbeitsplatz** ein. Autos anklicken verrät, wer da fährt.
 - **📰 Retropolis Kurier**: Zeitungs-Schlagzeilen aus echten Sim-Ereignissen
   („STAU-REKORD: Herta Kowalski pendelt 19 Felder").
 - **Epochen**: Die Zeit verändert das Spiel — 1994 kommt die Solaranlage,
@@ -179,14 +184,23 @@ bring deine Stadt vom Dorf zur Metropole.
 - Daten-Overlays: Strom, Wasser (Netzansicht versorgt/trocken), Verkehr, Landwert, Umwelt, Polizei,
   Feuerwehr, Bildung, Gesundheit, Freizeit, Kriminalität — Problemzonen zusätzlich
   **schraffiert** (farbenblind-tauglich)
-- **Statistik-Panel** mit Verlaufsgraphen (Einwohner, Kasse, Zufriedenheit)
+- **Statistik-Panel** mit Verlaufsgraphen (Einwohner, Kasse, Zufriedenheit) und
+  einem **Stadt-Dashboard**: alle Kennzahlen auf einen Blick (Beschäftigung,
+  Strom, Wasser, Müll, Kriminalität, Bildung, Tourismus, Export, Anschlüsse) —
+  Problemwerte rot hervorgehoben
+- **Transparentes Info-Panel**: Jedes Gebäude erklärt in einem Satz, was es tut,
+  und zeigt seinen konkreten Live-Beitrag (Stromabgabe, Wasserabgabe,
+  Abdeckungsradius, Export-/Müllkapazität, Bedarf, Unterhalt)
+- **🚢 Schiffe & ✈ Flugzeuge**: Frachtschiffe fahren sichtbar auf dem Wasser rund
+  um die Häfen (in Fahrtrichtung gedreht, mit Bugwelle); an Flughäfen starten
+  Verkehrsflugzeuge und ziehen mit Bodenschatten über die Karte
 - **Tag/Nacht-Zyklus** mit leuchtenden Fenstern und Auto-Scheinwerfern
 - **3 Save-Slots** mit Autosave, Export/Import als JSON-Datei
   (RLE-komprimiertes Format v4, lädt auch alte Spielstände)
 - **Zweisprachig**: Deutsch/Englisch, automatisch erkannt, umschaltbar
 - **Touch-optimiert**: größere Ziele, Pinch-Zoom, optionale Bau-Bestätigung
 - Minimap, 3 Geschwindigkeiten + Pause, Meldungs-Toasts, Einsteiger-Tipps
-- Animiertes Wasser, drehende Windräder, Rauch, fahrende Autos und Züge
+- Animiertes Wasser, drehende Windräder, Rauch, fahrende Autos, Züge, Schiffe und Flugzeuge
 - CRT-Scanline-Effekt (abschaltbar), **2 Chiptune-Songs** mit ruhigeren
   Nacht-Varianten, Ambient-Sound (Wasserrauschen, Verkehr), Lautstärkeregler
 

@@ -496,6 +496,44 @@ const Sprites = (() => {
     return c;
   }
 
+  // ---------- Frachtschiff 16x16 (zeigt nach Norden, wird gedreht) ----------
+  function shipSprite() {
+    const c = cv(16, 16), x = c.getContext('2d');
+    // Rumpf (Bug oben, spitz)
+    x.fillStyle = '#28324c';
+    x.fillRect(6, 1, 4, 1); x.fillRect(5, 2, 6, 1); x.fillRect(4, 3, 8, 11);
+    x.fillStyle = '#1a2138'; x.fillRect(4, 13, 8, 2);          // Heck dunkler
+    // Deck
+    x.fillStyle = '#8a93a8'; x.fillRect(5, 4, 6, 9);
+    // Container (bunt gestapelt)
+    x.fillStyle = '#c9484f'; x.fillRect(5, 5, 6, 2);
+    x.fillStyle = '#4f8fdc'; x.fillRect(5, 7, 6, 2);
+    x.fillStyle = '#f0d95c'; x.fillRect(5, 9, 6, 1);
+    // Aufbau/Brücke am Heck
+    x.fillStyle = '#f2f2ef'; x.fillRect(6, 11, 4, 2);
+    x.fillStyle = '#2f5fa8'; x.fillRect(6, 11, 4, 1);
+    return c;
+  }
+
+  // ---------- Verkehrsflugzeug 16x16 (zeigt nach Norden, wird gedreht) ----------
+  function planeSprite() {
+    const c = cv(16, 16), x = c.getContext('2d');
+    // Rumpf
+    x.fillStyle = '#eef1f6'; x.fillRect(7, 1, 2, 13);
+    x.fillStyle = '#d3d9e6'; x.fillRect(7, 1, 1, 13);          // Schattenkante
+    x.fillStyle = '#4f8fdc'; x.fillRect(7, 1, 2, 2);           // Nase (Cockpit)
+    // Tragflächen (Pfeilform)
+    x.fillStyle = '#c7cfdd';
+    x.fillRect(2, 7, 12, 2); x.fillRect(4, 6, 8, 1); x.fillRect(6, 9, 4, 1);
+    // Höhenleitwerk
+    x.fillStyle = '#c7cfdd'; x.fillRect(5, 12, 6, 1); x.fillRect(6, 13, 4, 1);
+    // Triebwerke
+    x.fillStyle = '#565c6b'; x.fillRect(4, 8, 1, 2); x.fillRect(11, 8, 1, 2);
+    // Kabinenfenster
+    x.fillStyle = '#2f5fa8'; x.fillRect(7, 4, 2, 1); x.fillRect(7, 6, 2, 1);
+    return c;
+  }
+
   // ---------- Schiene: Autotile (Maske N=1 E=2 S=4 W=8) ----------
   function railTile(mask) {
     const c = cv(TILE, TILE), x = c.getContext('2d');
@@ -1484,6 +1522,8 @@ const Sprites = (() => {
     store.recycle = RECYCLE;
     store.airport = airportSprite();
     store.nuclear = nuclearSprite();
+    store.ship = shipSprite();
+    store.plane = planeSprite();
     store.fire = [fireTile(0), fireTile(1), fireTile(2)];
     store.smoke = [smokeTile(0), smokeTile(1)];
     store.tornado = [TORNADO0, TORNADO1];

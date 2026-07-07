@@ -60,6 +60,7 @@
     <button class="btn" id="btnTransit">🚏</button>
     <button class="btn" id="btnBbs" title="RETRO-NET BBS">📟</button>
     <button class="btn" id="btnCamera">📸</button>
+    <button class="btn" id="btnResidents" title="Einwohner">👥</button>
     <button class="btn" id="btnStats">📈</button>
     <button class="btn" id="btnSfx">🔊</button>
     <button class="btn" id="btnMusic">🎵</button>
@@ -144,7 +145,18 @@
   <h2 data-i18n="ui.stats"></h2>
   <div id="scenarioStatus"></div>
   <canvas id="statsCanvas" width="440" height="260"></canvas>
+  <div id="statsDash" class="dashGrid"></div>
   <div class="row right"><button class="btn" id="btnStatsClose" data-i18n="ui.close"></button></div>
+</div>
+
+<!-- Einwohner-Panel -->
+<div id="residentsPanel" class="panel dialog hidden">
+  <h2 data-i18n="res.title"></h2>
+  <div id="residentsList"></div>
+  <div class="row right">
+    <button class="btn" id="btnResidentsRefresh" data-i18n="res.refresh"></button>
+    <button class="btn" id="btnResidentsClose" data-i18n="ui.close"></button>
+  </div>
 </div>
 
 <!-- Berater -->
