@@ -9,7 +9,8 @@ const { Sim, rleEncode, rleDecode } = M;
 const { S_ROAD, S_RAIL, S_WIRE, S_RZONE, S_CZONE, S_IZONE, S_COAL, S_WIND, S_WTOWER, S_PUMP, S_SOLAR,
   S_BUSSTOP, S_SUBWAY, S_PORT, S_PIPE, S_HOTEL, S_AMUSE, S_PARK, S_POLICE, S_SCHOOL,
   S_HIGHWAY, S_LANDFILL, S_INCINER, S_RECYCLE, S_AIRPORT, S_NUCLEAR,
-  S_TREATMENT, S_UNIVERSITY, S_FIREDEP, S_HOSPITAL, S_NONE, T_WATER } = M;
+  S_TREATMENT, S_UNIVERSITY, S_FIREDEP, S_HOSPITAL, S_NONE, T_WATER,
+  S_RUNWAY, S_PIER } = M;
 
 let pass = 0, fail = 0;
 function check(name, cond) {
@@ -570,6 +571,59 @@ section('Flughafen (Export + Tourismus-Anreise)');
   for (let yy = 20; yy <= 21; yy++) for (let xx = 20; xx <= 21; xx++) y0.terr[y0.idx(xx, yy)] = 0;
   const rej = y0.canPlace(S_AIRPORT, 20, 20);
   check('Flughafen vor 1995 gesperrt', !rej.ok && rej.reason === 'err.minYear');
+}
+
+section('Dynamische Erweiterungen: Landebahn & Pier');
+{
+  const s = new Sim(64, 64, 3);
+  s.money = 800000; s.pop = 3000; s.year = 1996; s.disasters = false; s.month = 3;
+  const c = 30;
+  // Gras-Fläche + Wassersee links
+  for (let y = 24; y <= 36; y++) for (let x = 2; x <= 46; x++) s.terr[s.idx(x, y)] = 0;
+  for (let y = 24; y <= 36; y++) { s.terr[s.idx(2, y)] = T_WATER; s.terr[s.idx(3, y)] = T_WATER; }
+  // Straße (keine Randverbindung) + Strom
+  for (let x = 4; x <= 44; x++) s.place(S_ROAD, x, c);
+  for (let x = 5; x <= 12; x++) s.place(S_WIND, x, c + 1);
+  // viel Industrie an der Straße → saturiert die Flughafen-Basiskapazität
+  let ij = 0;
+  for (let x = 8; x <= 38; x++) if (s.place(S_IZONE, x, c - 1).ok) { s.lvl[s.idx(x, c - 1)] = 4; ij++; }
+  // Flughafen 2x2 an der Straße (rechts)
+  const ap = s.place(S_AIRPORT, 40, c + 1);
+  check('Flughafen (2x2) gebaut', ap.ok);
+  s.computePower(); s.computeRoadAccess(); s.computeCommute();
+  const exp0 = s.exportBase;
+  check('Basis saturiert Flughafen-Kapazität (' + exp0.toFixed(0) + ')', exp0 > 0 && s.airportTotal >= 1);
+
+  // Landebahn ohne Anschluss wird abgelehnt
+  const noLink = s.canPlace(S_RUNWAY, 6, 34);
+  check('Landebahn ohne Anschluss abgelehnt', !noLink.ok && noLink.reason === 'err.runwayLink');
+  // Landebahnen kettenweise an den Flughafen (freie Grasreihe c+1)
+  check('Landebahn 1 an Flughafen platziert', s.place(S_RUNWAY, 39, c + 1).ok);
+  check('Landebahn 2 an Landebahn platziert', s.place(S_RUNWAY, 38, c + 1).ok);
+  check('Landebahn 3 an Landebahn platziert', s.place(S_RUNWAY, 37, c + 1).ok);
+  s.computeRoadAccess(); s.computeCommute();
+  check('3 Landebahnen gezählt', s.runwayTotal === 3);
+  check('Landebahnen erhöhen die Export-Kapazität (' + exp0.toFixed(0) + ' → ' + s.exportBase.toFixed(0) + ')', s.exportBase > exp0);
+
+  // Hafen am See + Pier auf Wasser
+  const pr = s.place(S_PORT, 4, 25);
+  check('Hafen (2x2) am Wasser gebaut', pr.ok);
+  // Pier muss auf Wasser stehen
+  const pierLand = s.canPlace(S_PIER, 6, 34);
+  check('Pier auf Land abgelehnt', !pierLand.ok && pierLand.reason === 'err.pierWater');
+  // Pier muss an Hafen/Pier anschließen (Wasser bei x=2/3)
+  const pierFar = s.canPlace(S_PIER, 2, 33);
+  check('Pier ohne Hafen-Anschluss abgelehnt', !pierFar.ok && pierFar.reason === 'err.pierLink');
+  // Pier neben dem Hafen (Hafen belegt 4..5 × 25..26; Wasser bei x=3)
+  check('Pier 1 an Hafen platziert', s.place(S_PIER, 3, 25).ok);
+  check('Pier 2 an Pier platziert', s.place(S_PIER, 3, 26).ok);
+  s.computeRoadAccess(); s.computeCommute();
+  check('2 Piers gezählt', s.pierTotal === 2);
+
+  // Erweiterungen überstehen Save/Load bitgenau
+  const blob = s.serialize();
+  const s2 = Sim.load(blob);
+  check('Landebahnen/Piers überleben Save/Load', s2.runwayTotal === s.runwayTotal && s2.pierTotal === s.pierTotal);
 }
 
 section('Kernkraftwerk (viel Strom)');

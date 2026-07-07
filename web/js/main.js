@@ -104,7 +104,9 @@
     { id: 'inciner',  mode: 'single', s: S_INCINER },
     { id: 'recycle',  mode: 'single', s: S_RECYCLE },
     { id: 'port',     mode: 'single', s: S_PORT },
+    { id: 'pier',     mode: 'line', s: S_PIER },
     { id: 'airport',  mode: 'single', s: S_AIRPORT },
+    { id: 'runway',   mode: 'line', s: S_RUNWAY },
     { id: 'park',     key: '0', mode: 'single', s: S_PARK },
     { id: 'police',   mode: 'single', s: S_POLICE },
     { id: 'firedep',  mode: 'single', s: S_FIREDEP },
@@ -129,6 +131,8 @@
       case 'highway': return Sprites.get('highway', 10);
       case 'wire': return Sprites.get('wire', 10);
       case 'pipe': return Sprites.get('pipe', 10);
+      case 'runway': return Sprites.get('runway', 5);
+      case 'pier': return Sprites.get('pier', 5);
       case 'rz': return Sprites.store.zoneR;
       case 'cz': return Sprites.store.zoneC;
       case 'iz': return Sprites.store.zoneI;
@@ -1097,8 +1101,10 @@
     if (s === S_LANDFILL && anchor) L.push('🗑 +' + BAL.GARBAGE.LANDFILL_CAP + ' ' + t('info.garbCap'));
     if (s === S_INCINER) L.push('🗑 +' + BAL.GARBAGE.INCINER_CAP + ' ' + t('info.garbCap'));
     if (s === S_RECYCLE) L.push('♻ −' + BAL.GARBAGE.RECYCLE_CUT + ' ' + t('info.garbCut'));
-    if (s === S_PORT && anchor) L.push('⚓ ' + t('info.exportCap') + ' +' + BAL.ECONOMY.CAP_PORT);
-    if (s === S_AIRPORT && anchor) L.push('✈ ' + t('info.exportCap') + ' +' + BAL.ECONOMY.CAP_AIR);
+    if (s === S_PORT && anchor) L.push('⚓ ' + t('info.exportCap') + ' +' + BAL.ECONOMY.CAP_PORT + ' (+' + BAL.ECONOMY.CAP_PORT_EXT + '/' + t('info.perPier') + ')');
+    if (s === S_AIRPORT && anchor) L.push('✈ ' + t('info.exportCap') + ' +' + BAL.ECONOMY.CAP_AIR + ' (+' + BAL.ECONOMY.CAP_AIR_EXT + '/' + t('info.perRunway') + ')');
+    if (s === S_PIER) L.push('⚓ ' + t('info.exportCap') + ' +' + BAL.ECONOMY.CAP_PORT_EXT);
+    if (s === S_RUNWAY) L.push('✈ ' + t('info.exportCap') + ' +' + BAL.ECONOMY.CAP_AIR_EXT + ' · ⭐ +' + BAL.TOURISM.ATTRACT.airportRunway);
     if (s === S_HIGHWAY) L.push('🛣 ' + t('info.exportCap') + ' +' + BAL.ECONOMY.CAP_HIGHWAY);
     if (s === S_CASINO && sim.powered[i]) L.push('€ +' + DEFS[S_CASINO].income + '/Mon');
     if (def.drain && anchor) L.push('⚡ −' + def.drain + ' ' + t('info.powerUse'));
@@ -1782,6 +1788,26 @@
           if (y < sim.h - 1 && cond(i + sim.w)) m |= 4;
           if (x > 0 && cond(i - 1)) m |= 8;
           g.drawImage(S('pipe', m), lx, ly);
+        } else if (s === S_RUNWAY) {
+          if (!inChunk) continue;
+          // Landebahn verbindet sich mit Landebahn und Flughafen
+          const cond = (j) => { const q = sim.st[j]; return q === S_RUNWAY || q === S_AIRPORT; };
+          let m = 0;
+          if (y > 0 && cond(i - sim.w)) m |= 1;
+          if (x < sim.w - 1 && cond(i + 1)) m |= 2;
+          if (y < sim.h - 1 && cond(i + sim.w)) m |= 4;
+          if (x > 0 && cond(i - 1)) m |= 8;
+          g.drawImage(S('runway', m), lx, ly);
+        } else if (s === S_PIER) {
+          if (!inChunk) continue;
+          // Pier verbindet sich mit Pier und Hafen
+          const cond = (j) => { const q = sim.st[j]; return q === S_PIER || q === S_PORT; };
+          let m = 0;
+          if (y > 0 && cond(i - sim.w)) m |= 1;
+          if (x < sim.w - 1 && cond(i + 1)) m |= 2;
+          if (y < sim.h - 1 && cond(i + sim.w)) m |= 4;
+          if (x > 0 && cond(i - 1)) m |= 8;
+          g.drawImage(S('pier', m), lx, ly);
         } else if (s === S_RUBBLE) {
           if (!inChunk) continue;
           g.drawImage(S('rubble'), lx, ly);
@@ -2142,6 +2168,8 @@
     else if (s === S_IZONE) col = sim.lvl[i] ? '#f0d95c' : '#af9f3c';
     else if (s === S_COAL || s === S_WIND || s === S_SOLAR || s === S_NUCLEAR) col = '#ff9e2c';
     else if (s === S_HOTEL || s === S_AMUSE || s === S_AIRPORT) col = '#e5679f';
+    else if (s === S_RUNWAY) col = '#33333a';
+    else if (s === S_PIER) col = '#8a5a33';
     else if (s === S_LANDFILL || s === S_INCINER || s === S_RECYCLE) col = '#7a6a4a';
     else if (s === S_TREATMENT) col = '#3f96b8';
     else if (s === S_UNIVERSITY) col = '#c7cfdd';

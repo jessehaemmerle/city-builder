@@ -177,6 +177,7 @@
       EXT_LOCAL: 0.3,        // ohne Anbindung: nur lokale Ausflügler
       ATTRACT: {             // Anziehungskraft je Attraktion
         park: 4, stadium: 45, monument: 35, casino: 20, amuse: 70, airport: 40, university: 30,
+        airportRunway: 6,      // je zusätzliche Landebahn am versorgten Flughafen
       },
     },
 
@@ -193,6 +194,8 @@
       CAP_PORT: 400,           // … je Hafen
       CAP_HIGHWAY: 200,        // … je Autobahn-Randanschluss
       CAP_AIR: 650,            // … je Flughafen
+      CAP_AIR_EXT: 220,        // … je zusätzliche Landebahn-Kachel
+      CAP_PORT_EXT: 130,       // … je zusätzliche Pier-Kachel
       NO_EXPORT_PENALTY: 0.5,  // Industrie-Wachstumsfaktor ohne Außenanbindung
       NO_EXPORT_MIN_POP: 300,  // darunter greift die Strafe nicht
     },

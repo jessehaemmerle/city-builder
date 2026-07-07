@@ -438,28 +438,86 @@ const Sprites = (() => {
   // ---------- Flughafen 32x32 (Terminal, Rollfeld, Flieger) ----------
   function airportSprite() {
     const c = cv(32, 32), x = c.getContext('2d');
-    x.fillStyle = '#57575f'; x.fillRect(0, 0, 32, 32);          // Betonvorfeld
-    x.fillStyle = '#4a4a52'; for (let i = 0; i < 32; i += 8) x.fillRect(0, i, 32, 1);
-    // Landebahn (diagonal, weiße Mittelstriche)
-    x.fillStyle = '#33333a'; x.fillRect(2, 20, 28, 8);
-    x.fillStyle = P.W; for (let px = 4; px < 30; px += 6) x.fillRect(px, 23, 3, 1);
-    x.fillStyle = '#c8c840'; x.fillRect(2, 20, 28, 1); x.fillRect(2, 27, 28, 1);
-    // Terminal (oben)
-    x.fillStyle = P.g; x.fillRect(2, 2, 22, 12);
-    x.fillStyle = P.w; x.fillRect(2, 2, 22, 2);
-    x.fillStyle = P.c; for (let px = 4; px < 23; px += 3) x.fillRect(px, 6, 2, 5); // Glasfront
-    x.fillStyle = P.K; x.fillRect(2, 13, 22, 1);
-    // Tower
-    x.fillStyle = P.d; x.fillRect(25, 3, 4, 11);
-    x.fillStyle = P.c; x.fillRect(25, 3, 4, 3);
-    x.fillStyle = P.r; x.fillRect(26, 0, 2, 3);
-    // Flugzeug auf dem Vorfeld
+    // Grasfläche als Untergrund (Flughafengelände)
+    x.fillStyle = P.e; x.fillRect(0, 0, 32, 32);
+    x.fillStyle = P.E; for (let i = 3; i < 32; i += 7) x.fillRect(0, i, 32, 1);
+    // Rollweg (Taxiway) verbindet Terminal und Landebahn
+    x.fillStyle = P.a; x.fillRect(0, 22, 22, 4);
+    x.fillStyle = P.y; x.fillRect(0, 23, 22, 1);                // gelbe Rollweg-Linie
+    // Vorfeld (Apron) vor dem Terminal
+    x.fillStyle = P.A; x.fillRect(1, 13, 16, 9);
+    // Landebahn (Runway): breiter dunkler Asphaltstreifen rechts, vertikal
+    x.fillStyle = '#2f2f36'; x.fillRect(20, 1, 10, 30);
+    x.fillStyle = P.a; x.fillRect(20, 1, 1, 30); x.fillRect(29, 1, 1, 30); // Randstreifen
+    // Schwellenmarkierung (piano keys) oben & unten
     x.fillStyle = P.W;
-    x.fillRect(9, 16, 10, 3);                                   // Rumpf
-    x.fillRect(12, 14, 2, 7);                                   // Tragflächen
-    x.fillStyle = P.b; x.fillRect(17, 16, 2, 1);                // Cockpit
-    x.fillStyle = P.g; x.fillRect(8, 15, 2, 2);                 // Leitwerk
+    for (let px = 21; px < 29; px += 2) { x.fillRect(px, 2, 1, 3); x.fillRect(px, 27, 1, 3); }
+    // Mittellinie gestrichelt
+    for (let py = 7; py < 26; py += 4) x.fillRect(24, py, 1, 2);
+    // Aufsetzzonen-Markierung
+    x.fillStyle = P.W; x.fillRect(22, 8, 1, 2); x.fillRect(27, 8, 1, 2);
+    x.fillRect(22, 21, 1, 2); x.fillRect(27, 21, 1, 2);
+    // Terminal-Gebäude mit Fluggastbrücken (oben links)
+    x.fillStyle = P.d; x.fillRect(2, 2, 15, 10);
+    x.fillStyle = P.g; x.fillRect(2, 2, 15, 2);                 // helle Dachkante
+    x.fillStyle = P.c; for (let px = 4; px < 16; px += 3) x.fillRect(px, 5, 2, 5); // Glasfront
+    x.fillStyle = P.K; x.fillRect(2, 11, 15, 1);
+    x.fillStyle = P.m; x.fillRect(6, 12, 2, 2); x.fillRect(12, 12, 2, 2); // Gates/Brücken
+    // Kontrollturm mit Kanzel und Warnlicht
+    x.fillStyle = P.M; x.fillRect(15, 3, 3, 9);
+    x.fillStyle = P.c; x.fillRect(14, 2, 5, 3);                 // verglaste Kanzel
+    x.fillStyle = P.K; x.fillRect(14, 5, 5, 1);
+    x.fillStyle = P.r; x.fillRect(16, 0, 1, 2);                 // rotes Blinklicht
+    // Parkendes Flugzeug auf dem Vorfeld
+    x.fillStyle = P.W;
+    x.fillRect(5, 16, 9, 3);                                    // Rumpf
+    x.fillRect(8, 14, 2, 7);                                    // Tragflächen
+    x.fillStyle = P.w; x.fillRect(3, 15, 2, 2);                 // Leitwerk
+    x.fillStyle = P.b; x.fillRect(12, 17, 2, 1);                // Cockpitfenster
     x.fillStyle = 'rgba(0,0,0,0.25)'; x.fillRect(0, 31, 32, 1);
+    return c;
+  }
+
+  // ---------- Landebahn-Erweiterung: Autotile (Maske N=1 E=2 S=4 W=8) ----------
+  // Verbindet sich nahtlos zu einer durchgehenden Start-/Landebahn.
+  function runwayTile(mask) {
+    const c = cv(16, 16), x = c.getContext('2d');
+    x.fillStyle = P.e; x.fillRect(0, 0, 16, 16);               // Gras drumherum
+    x.fillStyle = '#2f2f36'; x.fillRect(2, 2, 12, 12);         // Asphaltbahn
+    x.fillStyle = P.a; x.fillRect(2, 2, 12, 1); x.fillRect(2, 13, 12, 1);
+    x.fillStyle = P.a; x.fillRect(2, 2, 1, 12); x.fillRect(13, 2, 1, 12);
+    // Verbindungsstücke, damit Nachbarbahnen zusammenwachsen
+    x.fillStyle = '#2f2f36';
+    if (mask & 1) x.fillRect(2, 0, 12, 3);                     // N
+    if (mask & 2) x.fillRect(13, 2, 3, 12);                    // E
+    if (mask & 4) x.fillRect(2, 13, 12, 3);                    // S
+    if (mask & 8) x.fillRect(0, 2, 3, 12);                     // W
+    // Mittellinie in Bahnrichtung (gestrichelt weiß)
+    x.fillStyle = P.W;
+    const vert = (mask & 1) || (mask & 4);
+    const horiz = (mask & 2) || (mask & 8);
+    if (vert || !horiz) { x.fillRect(7, 3, 2, 4); x.fillRect(7, 9, 2, 4); }
+    if (horiz) { x.fillRect(3, 7, 4, 2); x.fillRect(9, 7, 4, 2); }
+    return c;
+  }
+
+  // ---------- Pier/Anleger-Erweiterung: Autotile über Wasser ----------
+  function pierTile(mask) {
+    const c = cv(16, 16), x = c.getContext('2d');
+    // Wasser scheint an den Rändern durch (transparenter Hintergrund)
+    x.fillStyle = P.n; x.fillRect(3, 3, 10, 10);              // Holzdeck
+    x.fillStyle = P.N; for (let i = 4; i < 13; i += 3) x.fillRect(3, i, 10, 1); // Planken
+    x.fillStyle = P.N; x.fillRect(3, 3, 10, 1); x.fillRect(3, 12, 10, 1);
+    // Anschlüsse zu Nachbar-Piers
+    x.fillStyle = P.n;
+    if (mask & 1) x.fillRect(3, 0, 10, 4);                    // N
+    if (mask & 2) x.fillRect(12, 3, 4, 10);                   // E
+    if (mask & 4) x.fillRect(3, 12, 10, 4);                   // S
+    if (mask & 8) x.fillRect(0, 3, 4, 10);                    // W
+    // Poller/Kaikante
+    x.fillStyle = P.M; x.fillRect(4, 4, 1, 1); x.fillRect(11, 4, 1, 1);
+    x.fillRect(4, 11, 1, 1); x.fillRect(11, 11, 1, 1);
+    x.fillStyle = 'rgba(0,0,0,0.2)'; x.fillRect(3, 12, 10, 1);
     return c;
   }
 
@@ -1569,6 +1627,8 @@ const Sprites = (() => {
     store.inciner = INCINER;
     store.recycle = RECYCLE;
     store.airport = airportSprite();
+    store.runway = []; store.pier = [];
+    for (let m = 0; m < 16; m++) { store.runway[m] = runwayTile(m); store.pier[m] = pierTile(m); }
     store.nuclear = nuclearSprite();
     store.ship = shipSprite();
     store.plane = planeSprite();

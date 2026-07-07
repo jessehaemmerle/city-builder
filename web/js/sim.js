@@ -17,7 +17,8 @@ const S_NONE = 0, S_ROAD = 1, S_WIRE = 2, S_RZONE = 3, S_CZONE = 4, S_IZONE = 5,
   S_RAIL = 15, S_WTOWER = 16, S_PUMP = 17, S_TOWNHALL = 18, S_MONUMENT = 19, S_CASINO = 20,
   S_SOLAR = 21, S_BUSSTOP = 22, S_TRAINSTATION = 23, S_SUBWAY = 24, S_PORT = 25, S_PIPE = 26,
   S_HOTEL = 27, S_AMUSE = 28, S_HIGHWAY = 29, S_LANDFILL = 30, S_INCINER = 31,
-  S_RECYCLE = 32, S_AIRPORT = 33, S_NUCLEAR = 34, S_TREATMENT = 35, S_UNIVERSITY = 36;
+  S_RECYCLE = 32, S_AIRPORT = 33, S_NUCLEAR = 34, S_TREATMENT = 35, S_UNIVERSITY = 36,
+  S_RUNWAY = 37, S_PIER = 38;
 
 // Katalog. name = i18n-Key. Flags: bld, flam, drain, power, waterSupply, needsWaterAdj
 const DEFS = {
@@ -64,6 +65,10 @@ const DEFS = {
   [S_TREATMENT]:    { name: 'b.treatment',    cost: 1800, upkeep: 35, size: 2, bld: 1, drain: 3, needsWaterAdj: 1 },
   // Universität: hebt Bildung stadtweit + Attraktion
   [S_UNIVERSITY]:   { name: 'b.university',   cost: 4000, upkeep: 80, size: 2, bld: 1, flam: 1, drain: 4, minPop: 2000 },
+  // Landebahn: Erweiterungskachel für den Flughafen (an Flughafen/Landebahn anschließen)
+  [S_RUNWAY]:       { name: 'b.runway',       cost: 900,  upkeep: 12, size: 1, ext: 'airport' },
+  // Pier/Anleger: Erweiterungskachel für den Schiffshafen (auf Wasser, an Hafen/Pier anschließen)
+  [S_PIER]:         { name: 'b.pier',         cost: 700,  upkeep: 10, size: 1, ext: 'port' },
 };
 
 const LINE_COLORS = ['#e5484f', '#4f8fdc', '#41c46a', '#f0d95c', '#b06ce0', '#e08438', '#33c3c1', '#e39ac2'];
@@ -192,6 +197,7 @@ class Sim {
     this.exportBase = 0;
     this.extRoadTotal = 0; this.extRailTotal = 0; this.portTotal = 0;
     this.extHwyTotal = 0; this.airportTotal = 0;
+    this.runwayTotal = 0; this.pierTotal = 0;
     // Tourismus (abgeleitet in computeStats)
     this.attraction = 0; this.touristCap = 0; this.touristDemand = 0; this.tourists = 0;
     // Müll, Kriminalität, Bildung, Verordnungen
@@ -302,16 +308,29 @@ class Sim {
     if (def.minYear && this.year < def.minYear) return { ok: false, reason: 'err.minYear', params: { y: def.minYear } };
     if (tool === S_COAL && this.scenario && this.scenario.noCoal)
       return { ok: false, reason: 'err.noCoal' };
-    const overWater = tool === S_ROAD || tool === S_RAIL || tool === S_WIRE || tool === S_PIPE || tool === S_HIGHWAY;
+    // Pier liegt auf Wasser, Landebahn auf Land.
+    const overWater = tool === S_ROAD || tool === S_RAIL || tool === S_WIRE || tool === S_PIPE || tool === S_HIGHWAY || tool === S_PIER;
     for (let dy = 0; dy < size; dy++) for (let dx = 0; dx < size; dx++) {
       const px = x + dx, py = y + dy;
       if (!this.inMap(px, py)) return { ok: false, reason: 'err.outside' };
       const i = this.idx(px, py);
       if (this.terr[i] === T_WATER && !overWater) return { ok: false, reason: 'err.water' };
+      if (tool === S_PIER && this.terr[i] !== T_WATER) return { ok: false, reason: 'err.pierWater' };
       if (this.st[i] !== S_NONE) {
         if (this.st[i] === tool) return { ok: false, reason: 'err.exists' };
         return { ok: false, reason: 'err.occupied' };
       }
+    }
+    // Erweiterungskacheln müssen an ihr Basisgebäude oder gleiche Erweiterung anschließen.
+    if (def.ext) {
+      const base = def.ext === 'airport' ? S_AIRPORT : S_PORT;
+      let linked = false;
+      for (const [nx, ny] of [[x, y - 1], [x + 1, y], [x, y + 1], [x - 1, y]]) {
+        if (!this.inMap(nx, ny)) continue;
+        const s = this.st[this.idx(nx, ny)];
+        if (s === base || s === tool) { linked = true; break; }
+      }
+      if (!linked) return { ok: false, reason: def.ext === 'airport' ? 'err.runwayLink' : 'err.pierLink' };
     }
     if (def.needsWaterAdj) {
       // mindestens ein Nachbarfeld des gesamten Footprints muss Wasser sein
@@ -763,6 +782,35 @@ class Sim {
     const E = BAL.ECONOMY;
     const extRoadC = new Array(nc).fill(0), extRailC = new Array(nc).fill(0), portC = new Array(nc).fill(0);
     const extHwyC = new Array(nc).fill(0), airC = new Array(nc).fill(0);
+    // Erweiterungskacheln (Landebahn/Pier): pro Komponente gezählt, jede genau einmal.
+    const runwayC = new Array(nc).fill(0), pierC = new Array(nc).fill(0);
+    this.runwayTotal = 0; this.pierTotal = 0;
+    const extSeen = new Uint8Array(n);
+    // Flutet von einem Basisgebäude über zusammenhängende Erweiterungskacheln
+    // und schreibt die Anzahl der Komponentenwurzel des Basisanschlusses gut.
+    const floodExt = (startI, extTool, counter, root) => {
+      const stack = [];
+      for (const j of this.footprint(startI)) {
+        for (const [nx, ny] of [[j % w, (j / w | 0) - 1], [j % w + 1, j / w | 0], [j % w, (j / w | 0) + 1], [j % w - 1, j / w | 0]]) {
+          if (!this.inMap(nx, ny)) continue;
+          const k = this.idx(nx, ny);
+          if (this.st[k] === extTool && !extSeen[k]) { extSeen[k] = 1; stack.push(k); }
+        }
+      }
+      let count = 0;
+      while (stack.length) {
+        const k = stack.pop();
+        count++;
+        const kx = k % w, ky = k / w | 0;
+        for (const [nx, ny] of [[kx, ky - 1], [kx + 1, ky], [kx, ky + 1], [kx - 1, ky]]) {
+          if (!this.inMap(nx, ny)) continue;
+          const m = this.idx(nx, ny);
+          if (this.st[m] === extTool && !extSeen[m]) { extSeen[m] = 1; stack.push(m); }
+        }
+      }
+      if (root >= 0) counter[root] += count;
+      return count;
+    };
     const border = (i) => {
       const s = this.st[i];
       const c = this.compId[i];
@@ -777,10 +825,14 @@ class Sim {
       const s = this.st[i];
       if (s === S_PORT && this.isAnchor(i)) {
         const ap = this.accessPt[i];
-        if (ap >= 0 && this.compId[ap] >= 0) portC[find(this.compId[ap])]++;
+        const root = ap >= 0 && this.compId[ap] >= 0 ? find(this.compId[ap]) : -1;
+        if (root >= 0) portC[root]++;
+        this.pierTotal += floodExt(i, S_PIER, pierC, root);
       } else if (s === S_AIRPORT && this.isAnchor(i) && this.powered[i]) {
         const ap = this.accessPt[i];
-        if (ap >= 0 && this.compId[ap] >= 0) airC[find(this.compId[ap])]++;
+        const root = ap >= 0 && this.compId[ap] >= 0 ? find(this.compId[ap]) : -1;
+        if (root >= 0) airC[root]++;
+        this.runwayTotal += floodExt(i, S_RUNWAY, runwayC, root);
       }
     }
     this.compExt = new Array(nc);
@@ -795,14 +847,16 @@ class Sim {
         this.extHwyTotal += extHwyC[c];
         this.airportTotal += airC[c];
         const cap = extRoadC[c] * E.CAP_ROAD + extRailC[c] * E.CAP_RAIL + portC[c] * E.CAP_PORT +
-          extHwyC[c] * E.CAP_HIGHWAY + airC[c] * E.CAP_AIR;
+          extHwyC[c] * E.CAP_HIGHWAY + airC[c] * E.CAP_AIR +
+          runwayC[c] * E.CAP_AIR_EXT + pierC[c] * E.CAP_PORT_EXT;
         exportBase += Math.min(rootIJobs[c] * E.EXPORT_PER_IJOB, cap);
       }
     }
     this.exportBase = exportBase;
     for (let c = 0; c < nc; c++) {
       const r2 = find(c);
-      this.compExt[c] = extRoadC[r2] + extRailC[r2] + portC[r2] + extHwyC[r2] + airC[r2];
+      this.compExt[c] = extRoadC[r2] + extRailC[r2] + portC[r2] + extHwyC[r2] + airC[r2] +
+        runwayC[r2] + pierC[r2];
     }
 
     // 4) Bucket-Dijkstra von allen Arbeitsplätzen: Netz-Schritt kostet 1,
@@ -1054,6 +1108,8 @@ class Sim {
       else if (s === S_INCINER && this.powered[i]) garbCap += GB.INCINER_CAP;
       else if (s === S_RECYCLE && this.powered[i]) recycleCut += GB.RECYCLE_CUT;
     }
+    // Landebahnen an einem versorgten Flughafen steigern die Attraktivität.
+    attraction += this.runwayTotal * AT.airportRunway;
     this.pop = pop; this.cJobs = cJobs;
     this.casinos = casinos;
     this.attraction = attraction; this.touristCap = hotelBeds;
@@ -1673,7 +1729,7 @@ if (typeof module !== 'undefined' && module.exports) {
     S_RAIL, S_WTOWER, S_PUMP, S_TOWNHALL, S_MONUMENT, S_CASINO, S_SOLAR,
     S_BUSSTOP, S_TRAINSTATION, S_SUBWAY, S_PORT, S_PIPE, S_HOTEL, S_AMUSE,
     S_HIGHWAY, S_LANDFILL, S_INCINER, S_RECYCLE, S_AIRPORT, S_NUCLEAR,
-    S_TREATMENT, S_UNIVERSITY,
+    S_TREATMENT, S_UNIVERSITY, S_RUNWAY, S_PIER,
   };
 }
 // Browser: Erfolge-Liste für die UI verfügbar machen

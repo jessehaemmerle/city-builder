@@ -147,6 +147,16 @@ bring deine Stadt vom Dorf zur Metropole.
   am Wasser < **✈ Flughafen**) und tauchen als eigene Budget-Zeile auf. Der
   **Flughafen** (ab 1995) ist der stärkste Export- **und** Tourismus-Motor
   zugleich — bringt aber Fluglärm/Abgase, die den Landwert ringsum drücken.
+- **Dynamische Großanlagen (Flughafen & Hafen)**: Beide starten als 2×2-Kern und
+  lassen sich mit **Erweiterungskacheln** vergrößern, die wie Straßen gezogen
+  werden und sich per Autotile zu einer durchgehenden Anlage verbinden:
+  - **✈ Landebahn** (`runway`): schließt an Flughafen oder Landebahn an (auf Land),
+    hebt Export-Kapazität **und** Tourismus-Attraktivität je Kachel.
+  - **⚓ Pier** (`pier`): wird aufs Wasser gebaut und schließt an Hafen oder Pier
+    an, hebt die Export-Kapazität je Kachel.
+  So wächst die Kapazität mit der tatsächlich gebauten Fläche statt in festen
+  Sprüngen. Das Info-Fenster zeigt den Zuwachs pro Landebahn/Pier an; der
+  Flughafen muss dafür mit Strom versorgt sein.
 - **Tourismus** 🧳: Ein eigener, laufender Einnahmestrom. **Attraktionen**
   (Freizeitpark, Stadion, Denkmal, Casino, Parks) locken Besucher an, **Hotels**
   beherbergen sie (Betten = Kapazität). Wie viele Touristen kommen, hängt an der

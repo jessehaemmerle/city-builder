@@ -220,6 +220,24 @@ function check(name, cond) {
   check('Schiffe fahren auf dem Wasser (' + fleet.shipCount + ')', fleet.shipCount >= 1);
   check('Flugzeuge fliegen über die Karte (' + fleet.planeCount + ')', fleet.planeCount >= 1);
 
+  // Dynamische Erweiterungen: Landebahn am Flughafen, Pier am Hafen
+  const ext = await page.evaluate(() => {
+    const s = window.RETRO.sim; s.money = 9e6; s.year = 1997;
+    s.place(11, 16, 7);              // Windrad → versorgt den Flughafen mit Strom
+    const r1 = s.place(37, 13, 7);   // Landebahn an Flughafen (14,7)
+    const r2 = s.place(37, 13, 8);   // weitere Landebahn (kettet an Flughafen/Landebahn)
+    const p1 = s.place(38, 11, 5);   // Pier auf Wasser an Hafen (12,5)
+    const p2 = s.place(38, 11, 6);   // weiterer Pier
+    const bad = s.canPlace(37, 40, 40); // Landebahn ohne Anschluss
+    s.computePower(); s.computeRoadAccess(); s.computeCommute();
+    s.allChanged = true; s.year = 1990; // Jahr zurücksetzen (spätere Tests erwarten 1990)
+    return { r1: r1.ok, r2: r2.ok, p1: p1.ok, p2: p2.ok, bad: bad.ok, runwayTotal: s.runwayTotal, pierTotal: s.pierTotal };
+  });
+  await page.waitForTimeout(200);
+  check('Landebahn & Pier als Erweiterungen baubar', ext.r1 && ext.r2 && ext.p1 && ext.p2);
+  check('Erweiterung ohne Anschluss abgelehnt', ext.bad === false);
+  check('Erweiterungen zählen (Bahn ' + ext.runwayTotal + ', Pier ' + ext.pierTotal + ')', ext.runwayTotal >= 2 && ext.pierTotal >= 2);
+
   // Einwohner-Panel
   await page.click('#btnResidents');
   await page.waitForTimeout(300);
