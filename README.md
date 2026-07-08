@@ -120,11 +120,13 @@ bring deine Stadt vom Dorf zur Metropole.
   in einer Liste — ein Klick springt zum Ort des Geschehens.
 - **🏆 Erfolge**: Zehn Sammelziele (erste 1.000 Einwohner, saubere Stadt, Reiseziel,
   Bildungshochburg, Metropole …) mit Geldbonus beim Freischalten.
-- **🚏 ÖPNV mit Linienverwaltung**: Baue Bus-Haltestellen, Bahnhöfe und
-  U-Bahn-Stationen, lege im Linien-Panel eigene Linien an (benennen, Stopps
-  per Klick auf der Karte hinzufügen, löschen). Busse fahren über Straßen,
-  Züge über Schienen, U-Bahnen graben Tunnel — und verbinden sogar getrennte
-  Stadtteile. Pendler steigen **automatisch** um, wenn die Linie schneller ist
+- **🚏 ÖPNV mit Linienverwaltung**: Lege im Linien-Panel eigene Linien an
+  (benennen, löschen). **Neue Stopps setzt du direkt mit dem Werkzeug**: Linie
+  wählen und auf die Karte klicken — auf ein leeres Feld baut das Spiel die
+  passende Haltestelle automatisch und fügt sie der Linie hinzu (ein Klick auf
+  eine vorhandene Haltestelle übernimmt sie). Busse fahren über **Straßen und
+  Autobahnen**, Züge über Schienen, U-Bahnen graben Tunnel — und verbinden sogar
+  getrennte Stadtteile. Pendler steigen **automatisch** um, wenn die Linie schneller ist
   (echte Umsteige-Kanten in der Wegfindung): Das nimmt Autos von der Straße,
   verkürzt Arbeitswege und bringt Fahrgeld ein — gegen Betriebskosten je Linie
   und Stopp. Busse und Züge pendeln sichtbar auf ihren Routen, das
@@ -212,7 +214,10 @@ bring deine Stadt vom Dorf zur Metropole.
 ### Moderne Features im Retro-Gewand
 
 - Drag-Bau mit Live-Vorschau und Kostenanzeige, **Undo/Redo** (Strg+Z/Y)
-- Daten-Overlays: Strom, Wasser (Netzansicht versorgt/trocken), Verkehr, Landwert, Umwelt, Polizei,
+- **Auslastungs-Anzeigen in der Statusleiste**: neben `⚡ Strom` und `🚰 Wasser`
+  jetzt auch `🗑 Müll` (Aufkommen/Kapazität) und ein Wohlfahrts-Indikator
+  `💚 Gesundheit 🚔 Kriminalität 🎓 Bildung` — bei Engpässen rot.
+- Daten-Overlays: Strom, Wasser (Netzansicht versorgt/trocken), **Müll**, Verkehr, Landwert, Umwelt, Polizei,
   Feuerwehr, Bildung, Gesundheit, Freizeit, Kriminalität — Problemzonen zusätzlich
   **schraffiert** (farbenblind-tauglich)
 - **Statistik-Panel** mit Verlaufsgraphen (Einwohner, Kasse, Zufriedenheit) und

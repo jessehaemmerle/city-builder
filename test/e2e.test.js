@@ -430,8 +430,50 @@ function check(name, cond) {
   await page.waitForTimeout(300);
   await page.screenshot({ path: require('path').join(__dirname, '..', 'docs', 'screenshot-transit.png') });
   await page.selectOption('#overlaySel', '');
+
+  // --- Neue Stopps direkt mit dem Werkzeug setzen (wie U-Bahn) ---
+  // Freie Straße abseits der Stadt anlegen, damit die Klickfelder sicher leer sind.
+  await page.evaluate(() => {
+    const s = window.RETRO.sim, mid = (s.w / 2) | 0;
+    const ry = mid - 5; // oberhalb der Kartenmitte (frei von Toolbar-Overlap)
+    for (let x = mid - 4; x <= mid + 4; x++) {
+      for (let dy = -1; dy <= 2; dy++) { const i = s.idx(x, ry + dy); s.terr[i] = 0; s.st[i] = 0; s.anchor[i] = -1; }
+    }
+    for (let x = mid - 4; x <= mid + 4; x++) s.place(1, x, ry); // Straße
+    s.allChanged = true;
+  });
+  const busStopsBefore = await page.evaluate(() => { const s = window.RETRO.sim; let n = 0; for (let i = 0; i < s.w * s.h; i++) if (s.st[i] === 22) n++; return n; });
+  await page.click('#btnNewBus');
+  await page.waitForTimeout(150);
+  // Tile→Screen: Kartenmitte (32,32) liegt bei (640,400), 1 Kachel = 32px (TILE 16 × Zoom 2)
+  // Straße bei Reihe 27 → Klick auf Reihe 28 (y = 400 + (28-32)*32 = 272)
+  await page.mouse.click(640 - 96, 272); // leeres Grasfeld unter der Straße, links (Kachel 29,28)
+  await page.waitForTimeout(150);
+  await page.mouse.click(640 + 96, 272); // leeres Grasfeld unter der Straße, rechts (Kachel 35,28)
+  await page.waitForTimeout(150);
+  await page.click('#btnPickDone');
+  await page.waitForTimeout(300);
+  const autoLine = await page.evaluate(() => {
+    const s = window.RETRO.sim; let n = 0; for (let i = 0; i < s.w * s.h; i++) if (s.st[i] === 22) n++;
+    const L = s.lines[s.lines.length - 1];
+    return { stops: n, lineStops: L ? L.stops.length : 0 };
+  });
+  check('Werkzeug setzt neue Bus-Stopps direkt (' + busStopsBefore + '→' + autoLine.stops + ')',
+    autoLine.stops >= busStopsBefore + 2 && autoLine.lineStops === 2);
   await page.click('#btnTransit'); // Panel wieder schließen
   await page.click('#spd3');
+
+  // --- Auslastungs-Anzeigen: Müll-HUD + Müll-Overlay ---
+  const garbHud = await page.evaluate(() => {
+    const el = document.getElementById('uiGarbage');
+    return { text: el.textContent, matches: el.textContent.includes('/') };
+  });
+  check('Müll-Auslastung im HUD (' + garbHud.text.trim() + ')', garbHud.matches);
+  check('Gesundheits-Anzeige im HUD', await page.evaluate(() => document.getElementById('uiHealth').textContent.includes('%')));
+  await page.selectOption('#overlaySel', 'garbage');
+  await page.waitForTimeout(200);
+  check('Müll-Overlay auswählbar', await page.evaluate(() => document.getElementById('overlaySel').value === 'garbage'));
+  await page.selectOption('#overlaySel', '');
 
   // --- Postkarte ---
   await page.click('#btnCamera');

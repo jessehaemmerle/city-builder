@@ -916,7 +916,23 @@
     // Stopp-Klick-Modus der Linienverwaltung
     if (transitPick !== null && sim.inMap(p.x, p.y)) {
       const L = sim.lines.find(l => l.id === transitPick);
-      const r = sim.addStop(transitPick, sim.idx(p.x, p.y));
+      const i = sim.idx(p.x, p.y);
+      const stopType = Sim.stopTypeFor(L.type);
+      let r;
+      if (sim.st[i] === stopType) {
+        // vorhandenen Stopp in die Linie übernehmen
+        r = sim.addStop(transitPick, i);
+      } else if (sim.st[i] === S_NONE && sim.terr[i] !== T_WATER) {
+        // wie bei der U-Bahn: neuen Stopp direkt mit dem Werkzeug setzen
+        const before = snapTiles([i]);
+        const pr = sim.place(stopType, p.x, p.y);
+        if (pr.ok) {
+          pushUndo({ parts: [{ before, after: snapTiles([i]) }], money: pr.cost });
+          r = sim.addStop(transitPick, i);
+        } else r = pr;
+      } else {
+        r = { ok: false, reason: 'err.occupied' };
+      }
       if (r.ok) {
         sim.computeCommute();
         toast(t('tr.stopAdded', { n: L.stops.length, name: lineName(L) }));
@@ -1235,6 +1251,16 @@
     const wt = $('uiWater');
     wt.textContent = '🚰 ' + sim.waterNeed + '/' + sim.waterSupply;
     wt.style.color = sim.waterShort ? '#ff6b6b' : '';
+    // Müll-Auslastung (Aufkommen / Kapazität) — analog zu Strom/Wasser
+    const gb = $('uiGarbage');
+    gb.textContent = '🗑 ' + sim.garbageProduced + '/' + sim.garbageCap;
+    gb.style.color = sim.garbageOverflow > 0 ? '#ff6b6b' : '';
+    // Gesundheit/Sicherheit/Bildung als kompakter Wohlfahrts-Indikator
+    const hl = $('uiHealth');
+    const crimeBad = sim.avgCrime > 30;
+    hl.textContent = '💚 ' + Math.round(sim.healthIndex) + '%'
+      + ' 🚔' + Math.round(sim.avgCrime) + '% 🎓' + Math.round(sim.eduLevel * 100) + '%';
+    hl.style.color = (sim.healthIndex < 45 || crimeBad) ? '#ff6b6b' : '';
     // Konjunktur-Anzeige
     const ec = sim.econ;
     const eco = $('uiEcon');
@@ -2028,6 +2054,17 @@
             if (cv > 4) {
               col = 'rgba(120,40,200,' + Math.min(0.6, cv / 130 + 0.12) + ')';
               if (cv > BAL.CRIME.DECAY_AT) hatch = true;
+            }
+          } else if (overlay === 'garbage') {
+            // Auslastung: Entsorger = grün (Kapazität), Müllquellen = grün/rot je
+            // nachdem, ob die Stadt insgesamt Überkapazität hat oder überläuft.
+            const s = sim.st[i];
+            const over = sim.garbageOverflow > 0;
+            if (s === S_LANDFILL || s === S_INCINER || s === S_RECYCLE) {
+              col = 'rgba(60,200,120,0.55)';
+            } else if ((s === S_RZONE || s === S_CZONE || s === S_IZONE) && sim.lvl[i] > 0) {
+              if (over) { col = 'rgba(255,70,60,0.5)'; hatch = true; }
+              else col = 'rgba(80,230,110,0.4)';
             }
           } else {
             const m = { police: sim.covPolice, fire: sim.covFire, school: sim.covSchool, health: sim.covHealth, park: sim.covPark }[overlay];

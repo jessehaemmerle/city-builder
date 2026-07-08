@@ -473,8 +473,16 @@ class Sim {
     this.dirtyCommute = true;
   }
 
-  // Nächstgelegene Netz-Kachel (Straße/Schiene) im Umkreis — als "Tor" eines Stopps
-  nearestNet(i, kind) {
+  // Fahrweg-Matcher je Linientyp: Bus fährt über Straße UND Autobahn,
+  // Zug über Schiene, U-Bahn tunnelt (jede Netz-Kachel als Tor zulässig).
+  lineNetMatch(type) {
+    if (type === 'bus') return (s) => s === S_ROAD || s === S_HIGHWAY;
+    if (type === 'train') return (s) => s === S_RAIL;
+    return (s) => this.isNet(s);
+  }
+
+  // Nächstgelegene passende Netz-Kachel im Umkreis — als "Tor" eines Stopps
+  nearestNet(i, match) {
     const x = i % this.w, y = (i / this.w) | 0;
     const R = BAL.TRANSIT.GATE_RADIUS;
     let best = -1, bestD = 99;
@@ -484,15 +492,14 @@ class Sim {
       const nx = x + dx, ny = y + dy;
       if (!this.inMap(nx, ny)) continue;
       const j = this.idx(nx, ny);
-      const s = this.st[j];
-      const okKind = kind === 0 ? this.isNet(s) : s === kind;
-      if (okKind) { best = j; bestD = d; }
+      if (match(this.st[j])) { best = j; bestD = d; }
     }
     return best;
   }
 
-  // Kürzester Pfad zwischen zwei Netz-Kacheln über einen Kacheltyp (Bus: Straße, Zug: Schiene)
-  netPath(a, b, kind) {
+  // Kürzester Pfad zwischen zwei Netz-Kacheln über passende Kacheln
+  // (Bus: Straße/Autobahn, Zug: Schiene) — match ist ein Prädikat st→bool
+  netPath(a, b, match) {
     if (a < 0 || b < 0) return null;
     if (a === b) return [a];
     const { w, h } = this;
@@ -507,7 +514,7 @@ class Sim {
       for (const [nx, ny] of [[x, y - 1], [x + 1, y], [x, y + 1], [x - 1, y]]) {
         if (!this.inMap(nx, ny)) continue;
         const j = this.idx(nx, ny);
-        if (prev[j] === -2 && this.st[j] === kind) { prev[j] = cur; queue[tail++] = j; }
+        if (prev[j] === -2 && match(this.st[j])) { prev[j] = cur; queue[tail++] = j; }
       }
     }
     if (prev[b] === -2) return null;
@@ -713,8 +720,8 @@ class Sim {
     this.lines = this.lines.filter(L => L.stops.length > 0);
     for (const L of this.lines) {
       const cfg = T[L.type];
-      const gateKind = L.type === 'bus' ? S_ROAD : L.type === 'train' ? S_RAIL : 0;
-      L.gates = L.stops.map(si => this.nearestNet(si, gateKind));
+      const match = this.lineNetMatch(L.type);
+      L.gates = L.stops.map(si => this.nearestNet(si, match));
       L.paths = [];   // Fahrweg je Segment (U-Bahn: null = Tunnel)
       L.cum = [0];    // kumulierte Fahrkosten bis Stopp k
       L.riders = 0;
@@ -725,7 +732,7 @@ class Sim {
           const a = L.stops[k], b = L.stops[k + 1];
           segLen = Math.abs(a % w - b % w) + Math.abs(((a / w) | 0) - ((b / w) | 0));
         } else {
-          path = this.netPath(L.gates[k], L.gates[k + 1], L.type === 'bus' ? S_ROAD : S_RAIL);
+          path = this.netPath(L.gates[k], L.gates[k + 1], match);
           if (!path) { L.active = false; break; }
           segLen = path.length;
         }

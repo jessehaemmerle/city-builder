@@ -295,6 +295,24 @@ section('ÖPNV: Bus-Linie nimmt Autos von der Straße');
   check('Budget weist ÖPNV-Betrieb aus', withBus.s.lastBudget.transit > 0);
 }
 
+section('ÖPNV: Bus-Linie fährt auch über die Autobahn');
+{
+  const s = new Sim(48, 48, 7);
+  s.money = 200000;
+  const c = 24;
+  for (let x = 6; x <= 40; x++) s.terr[s.idx(x, c)] = 0;
+  // Straße – Autobahn – Straße als durchgehende Strecke
+  for (let x = 6; x <= 40; x++) s.place(x >= 16 && x <= 30 ? S_HIGHWAY : S_ROAD, x, c);
+  s.place(S_BUSSTOP, 7, c + 1);
+  s.place(S_BUSSTOP, 39, c + 1);
+  const L = s.createLine('bus');
+  s.addStop(L.id, s.idx(7, c + 1));
+  s.addStop(L.id, s.idx(39, c + 1));
+  s.computeRoadAccess(); s.computeCommute();
+  check('Bus-Linie über Straße+Autobahn aktiv', L.active === true);
+  check('Durchgehender Pfad quert die Autobahn', (L.paths[0] || []).length > 30);
+}
+
 section('Außenwelt & Export-Wirtschaft');
 {
   const s = new Sim(64, 64, 4242);
