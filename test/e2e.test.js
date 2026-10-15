@@ -521,8 +521,7 @@ function check(name, cond) {
   });
   check('3D-Raycast trifft eine gültige Kachel', built3d.valid);
   check('3D-Klick baut auf der getroffenen Kachel', built3d.built === true);
-  await page.waitForTimeout(400);
-  await page.screenshot({ path: require('path').join(__dirname, '..', 'docs', 'screenshot-3d.png') });
+  await page.waitForTimeout(200);
   await page.click('#btnView3d'); // zurück zu 2D
   await page.waitForTimeout(200);
 

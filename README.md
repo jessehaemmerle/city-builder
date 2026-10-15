@@ -15,15 +15,34 @@ WebAudio synthetisiert.
 ## 🧊 Zwei Ansichten: 2D-Pixel & 3D-Comic
 
 Über den **🧊-Knopf** (oben) wechselst du jederzeit zwischen der klassischen
-**2D-Pixel-Ansicht** und einer neuen **3D-Comic-Ansicht** (cel-schattiert, mit
-kräftigen schwarzen Umrissen). In 3D wächst die Stadt als echte Kulisse aus dem
-Boden: Zonen werden mit steigendem Level zu immer höheren, bunten Häusern, Bäume
-stehen als kleine Comic-Kegel, Flüsse und Strände bleiben erhalten, und Tag/Nacht
-färbt Himmel und Licht um. Steuerung in 3D: **Rechtsklick-Ziehen dreht** die Kamera,
-**Shift+Ziehen schwenkt**, **Mausrad zoomt** — gebaut wird wie gewohnt per Linksklick
-(exakte Kachel per Raycast). Die 3D-Darstellung nutzt ein **lokal mitgeliefertes
-Three.js** (`web/js/vendor/`), sodass der Container weiterhin ohne Internet und ohne
-Build-Schritt läuft.
+**2D-Pixel-Ansicht** und einer **3D-Comic-Ansicht** (cel-schattiert, mit kräftigen
+schwarzen Umrissen und weichen Schatten). Steuerung in 3D: **Rechtsklick-Ziehen
+dreht** die Kamera, **Shift+Ziehen schwenkt**, **Mausrad zoomt** — gebaut wird wie
+gewohnt per Linksklick (exakte Kachel per Raycast). Three.js liegt **lokal** im
+Repo (`web/js/vendor/`), der Container läuft also ohne Internet und ohne Build-Schritt.
+
+**Detailgrad à la OpenTTD.** Die 3D-Welt ist bewusst kleinteilig gebaut:
+
+- **Prozedurale, mehrteilige Gebäude** statt bunter Klötze — jedes aus Wänden,
+  Dach, Fenstern und Extras zusammengesetzt (Vertex-Farben je Bauteil):
+  - **Wohnen** wächst vom Einfamilienhaus mit Spitzdach, Tür und Schornstein über
+    das Reihenhaus bis zum **Hochhaus** mit Fensterreihen und Dachaufbauten.
+  - **Gewerbe** reicht vom Ladengeschäft mit Schaufenster & Markise bis zum
+    gläsernen **Büroturm**.
+  - **Industrie** bekommt das klassische **Sägezahndach mit Schornstein und Tanks**.
+  - Eigene Modelle u. a. für **Kohle-KW** (Schlote), **Kernkraft** (Kühltürme),
+    **Windrad** (Mast + Rotor), **Wasserturm**, **Krankenhaus** (Kreuz + Helipad),
+    **Freizeitpark** (Riesenrad), **Stadion**, **Hafen** (Kran + Container),
+    **Flughafen** (Tower), **Denkmal**, **Rathaus** (Turm) u. v. m.
+- **Detaillierter Boden** (adaptiv hochaufgelöste Textur): Gras mit Büscheln und
+  Farbvariation, Sand mit Körnung, **Wasser mit Wellen und hellem Küstensaum**,
+  Straßen mit Mittel-/Randmarkierung (Autobahn gelb gestrichelt), Schienen mit
+  **Schwellen und Schienensträngen**.
+- **Drei Baumtypen** (Nadel-, Laubbaum, Busch) in zufälliger Größe und Drehung,
+  dazu weiche Schlagschatten und ein leichter Tiefen-Nebel am Horizont.
+
+Tag/Nacht färbt Himmel, Sonne und Umgebungslicht um. Auf sehr großen Karten
+werden Texturauflösung und Schatten automatisch gedrosselt.
 
 ![Retropolis in 3D-Comic-Optik](docs/screenshot-3d.png)
 
