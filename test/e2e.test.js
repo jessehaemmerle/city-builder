@@ -35,7 +35,7 @@ function check(name, cond) {
 (async () => {
   await new Promise(r => server.listen(PORT, r));
   const { chromium } = require(process.env.PLAYWRIGHT_PATH || 'playwright');
-  const launchOpts = {};
+  const launchOpts = { args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] };
   if (process.env.CHROMIUM_PATH) launchOpts.executablePath = process.env.CHROMIUM_PATH;
   const browser = await chromium.launch(launchOpts);
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
@@ -45,7 +45,9 @@ function check(name, cond) {
   page.on('pageerror', e => errors.push('PAGEERROR: ' + e.message));
   page.on('dialog', d => d.accept());
 
-  await page.goto('http://localhost:' + PORT + '/index.html');
+  // Tests laufen in der 2D-Ansicht (feste Bildschirm→Kachel-Koordinaten);
+  // die 3D-Comic-Ansicht wird am Ende separat geprüft.
+  await page.goto('http://localhost:' + PORT + '/index.html?view=2d');
   await page.waitForTimeout(800);
 
   check('Titelbildschirm sichtbar', await page.isVisible('#titleScreen'));
@@ -492,6 +494,37 @@ function check(name, cond) {
   await page.waitForTimeout(600);
   const pop2 = await page.evaluate(() => window.RETRO.sim.pop);
   check('Slot-Laden liefert Bevölkerung (' + pop2 + ')', pop2 > 0);
+
+  // --- 3D-Comic-Ansicht: umschalten, Rendering + Klick-Bau prüfen ---
+  const ready3d = await page.evaluate(() => !!(window.Render3D && window.Render3D.ready));
+  check('3D-Renderer initialisiert (WebGL)', ready3d);
+  await page.click('#btnView3d');
+  await page.waitForTimeout(600);
+  const shown3d = await page.evaluate(() => document.getElementById('game3d').style.display === 'block');
+  check('3D-Ansicht aktiv', shown3d);
+  // WebGL-Canvas zeigt etwas (nicht leer)
+  const px3d = await page.evaluate(() => {
+    const c = document.getElementById('game3d');
+    return c.width > 0 && c.height > 0;
+  });
+  check('3D-Canvas hat Größe', px3d);
+  // Raycast: Bildschirmmitte muss auf eine gültige Karten-Kachel zeigen,
+  // und darauf lässt sich bauen (Ende-zu-Ende: Klickpunkt → Kachel → place).
+  const built3d = await page.evaluate(() => {
+    const s = window.RETRO.sim;
+    const t = window.Render3D.pick(640, 400);
+    if (!t || t.x < 0 || t.x >= s.w || t.y < 0 || t.y >= s.h) return { valid: false };
+    const i = s.idx(t.x, t.y);
+    s.terr[i] = 0; s.st[i] = 0; s.anchor[i] = -1; s.money = 1e6; // Kachel freiräumen
+    const r = s.place(1, t.x, t.y); s.allChanged = true;
+    return { valid: true, built: r.ok && s.st[i] === 1, tile: t };
+  });
+  check('3D-Raycast trifft eine gültige Kachel', built3d.valid);
+  check('3D-Klick baut auf der getroffenen Kachel', built3d.built === true);
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: require('path').join(__dirname, '..', 'docs', 'screenshot-3d.png') });
+  await page.click('#btnView3d'); // zurück zu 2D
+  await page.waitForTimeout(200);
 
   if (errors.length) {
     console.log('\n❌ JS-FEHLER:');

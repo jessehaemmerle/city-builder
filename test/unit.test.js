@@ -313,6 +313,20 @@ section('ÖPNV: Bus-Linie fährt auch über die Autobahn');
   check('Durchgehender Pfad quert die Autobahn', (L.paths[0] || []).length > 30);
 }
 
+section('Mechanik: Landwert hebt die Steuereinnahmen');
+{
+  const s = new Sim(32, 32, 1);
+  s.pop = 1000; s.jobs = 500; s.taxRate = BAL.DEMAND.TAX_NEUTRAL;
+  s.avgLandv = 0; s.monthlyBudget();
+  const low = s.lastBudget.income;
+  s.avgLandv = 100; s.monthlyBudget();
+  const high = s.lastBudget.income;
+  check('Hoher Landwert bringt mehr Steuern (' + low + ' → ' + high + ')', high > low);
+  const expected = Math.round(low * (1 + BAL.MONEY.LANDV_TAX_F));
+  check('Landwert-Bonus entspricht der Balance (~+' + Math.round(BAL.MONEY.LANDV_TAX_F * 100) + '%)',
+    Math.abs(high - expected) <= 2);
+}
+
 section('Außenwelt & Export-Wirtschaft');
 {
   const s = new Sim(64, 64, 4242);

@@ -55,6 +55,9 @@
       TAX_POP: 1.0, TAX_JOBS: 0.5,
       LOAN_STEP: 5000, LOAN_RATE: 0.015,
       BRIDGE_FACTOR: 3,
+      // Gute Stadtplanung zahlt sich aus: hoher Landwert hebt die Steuerbasis.
+      // Faktor = 1 + (avgLandv/100) * LANDV_TAX_F  (bei avgLandv=100 → +30%).
+      LANDV_TAX_F: 0.3,
     },
 
     POLLUTION: {

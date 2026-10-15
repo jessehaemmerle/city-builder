@@ -6,11 +6,26 @@ im Browser spielbar und in einem Docker-Container ausgeliefert.
 ![Retropolis bei Tag](docs/screenshot-city.png)
 
 Alle Texturen sind **selbst entworfene Pixel-Art**, die zur Laufzeit im Code erzeugt
-wird (ASCII-Pixelart + prozedurale Kacheln) — es gibt keinerlei externe Assets,
-Bibliotheken oder Build-Schritte. Auch die Chiptune-Musik und alle Soundeffekte
-werden live per WebAudio synthetisiert.
+wird (ASCII-Pixelart + prozedurale Kacheln) — es gibt keinerlei externe Assets
+oder Build-Schritte. Auch die Chiptune-Musik und alle Soundeffekte werden live per
+WebAudio synthetisiert.
 
 ![Retropolis bei Nacht](docs/screenshot-night.png)
+
+## 🧊 Zwei Ansichten: 2D-Pixel & 3D-Comic
+
+Über den **🧊-Knopf** (oben) wechselst du jederzeit zwischen der klassischen
+**2D-Pixel-Ansicht** und einer neuen **3D-Comic-Ansicht** (cel-schattiert, mit
+kräftigen schwarzen Umrissen). In 3D wächst die Stadt als echte Kulisse aus dem
+Boden: Zonen werden mit steigendem Level zu immer höheren, bunten Häusern, Bäume
+stehen als kleine Comic-Kegel, Flüsse und Strände bleiben erhalten, und Tag/Nacht
+färbt Himmel und Licht um. Steuerung in 3D: **Rechtsklick-Ziehen dreht** die Kamera,
+**Shift+Ziehen schwenkt**, **Mausrad zoomt** — gebaut wird wie gewohnt per Linksklick
+(exakte Kachel per Raycast). Die 3D-Darstellung nutzt ein **lokal mitgeliefertes
+Three.js** (`web/js/vendor/`), sodass der Container weiterhin ohne Internet und ohne
+Build-Schritt läuft.
+
+![Retropolis in 3D-Comic-Optik](docs/screenshot-3d.png)
 
 ## 🚀 Schnellstart
 
@@ -132,7 +147,9 @@ bring deine Stadt vom Dorf zur Metropole.
   und Stopp. Busse und Züge pendeln sichtbar auf ihren Routen, das
   „Linien“-Overlay zeigt das ganze Netz wie einen Liniennetzplan.
 - **Landwert**: Wasserlage, Parks und Sicherheit steigern ihn; Verschmutzung und
-  Stau drücken ihn. Hoher Landwert ⇒ Luxus-Gebäudevarianten und schnelleres Wachstum.
+  Stau drücken ihn. Hoher Landwert ⇒ Luxus-Gebäudevarianten und schnelleres Wachstum
+  — **und mehr Steuereinnahmen**: Gut geplante, attraktive Viertel bringen pro Kopf
+  deutlich mehr Geld (bis zu +30 % bei Spitzen-Landwert). Stadtplanung zahlt sich aus.
 - **Budget & Kredite**: monatliche Steuern minus Unterhalt; bei Ebbe in der Kasse
   Kredite in 5.000-€-Schritten (1,5% Zins/Monat), jederzeit tilgbar.
 - **Katastrophen**: Brände, **Tornados**, **Hochwasser** am Ufer — und

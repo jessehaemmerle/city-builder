@@ -61,8 +61,24 @@
 
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
+  const canvas3d = document.getElementById('game3d');
   const mini = document.getElementById('minimap');
   const mctx = mini.getContext('2d');
+
+  // 2D (Pixel) vs. 3D (Comic). Standard 3D, per ?view=2d erzwingbar (Tests).
+  const has3D = !!window.Render3D;
+  let viewMode = (() => {
+    try {
+      const q = new URLSearchParams(location.search).get('view');
+      if (q === '2d' || q === '3d') return q;
+      const saved = localStorage.getItem('retro_view');
+      if (saved === '2d' || saved === '3d') return saved;
+    } catch (e) { /* ignore */ }
+    return has3D ? '3d' : '2d';
+  })();
+  if (!has3D) viewMode = '2d';
+  if (has3D) { try { Render3D.init(canvas3d); } catch (e) { console.error('3D init failed', e); viewMode = '2d'; } }
+  const is3D = () => viewMode === '3d' && has3D && Render3D.ready;
 
   const $ = (id) => document.getElementById(id);
 
@@ -607,6 +623,7 @@
 
   // ---------- Kamera ----------
   function screenToTile(px, py) {
+    if (is3D()) return Render3D.pick(px, py) || { x: -1, y: -1 };
     return {
       x: Math.floor((px / cam.zoom + cam.x) / TILE),
       y: Math.floor((py / cam.zoom + cam.y) / TILE),
@@ -903,12 +920,15 @@
   $('btnTcCancel').addEventListener('click', clearPendingTap);
 
   // ---------- Eingabe: Maus ----------
-  canvas.addEventListener('contextmenu', e => e.preventDefault());
+  const onContextMenu = e => e.preventDefault();
+  canvas.addEventListener('contextmenu', onContextMenu);
+  canvas3d.addEventListener('contextmenu', onContextMenu);
 
-  canvas.addEventListener('mousedown', (e) => {
+  const onMouseDown = (e) => {
     Sound.unlock();
     if (e.button === 2 || e.button === 1) {
-      panning = { sx: e.clientX, sy: e.clientY, cx: cam.x, cy: cam.y };
+      // Rechts/Mitte: 2D schwenken, 3D Kamera drehen/schwenken (Shift=schwenken)
+      panning = { sx: e.clientX, sy: e.clientY, cx: cam.x, cy: cam.y, pan: e.shiftKey };
       return;
     }
     if (e.button !== 0 || !sim) return;
@@ -962,13 +982,20 @@
       commitBuild();
       if (tl.mode === 'single') drag = null;
     }
-  });
+  };
+  canvas.addEventListener('mousedown', onMouseDown);
+  canvas3d.addEventListener('mousedown', onMouseDown);
 
   window.addEventListener('mousemove', (e) => {
     if (panning) {
-      cam.x = panning.cx - (e.clientX - panning.sx) / cam.zoom;
-      cam.y = panning.cy - (e.clientY - panning.sy) / cam.zoom;
-      clampCam();
+      if (is3D()) {
+        if (panning.pan) Render3D.panCam(e.movementX || 0, e.movementY || 0);
+        else Render3D.orbit(e.movementX || 0, e.movementY || 0);
+      } else {
+        cam.x = panning.cx - (e.clientX - panning.sx) / cam.zoom;
+        cam.y = panning.cy - (e.clientY - panning.sy) / cam.zoom;
+        clampCam();
+      }
       return;
     }
     if (!sim) return;
@@ -991,14 +1018,17 @@
     drag = null;
   });
 
-  canvas.addEventListener('wheel', (e) => {
+  const onWheel = (e) => {
     e.preventDefault();
+    if (is3D()) { Render3D.zoom(e.deltaY < 0 ? -4 : 4); return; }
     const before = screenToTile(e.clientX, e.clientY);
     cam.zoom = Math.max(1, Math.min(4, cam.zoom + (e.deltaY < 0 ? 1 : -1)));
     cam.x = before.x * TILE + (TILE / 2) - e.clientX / cam.zoom;
     cam.y = before.y * TILE + (TILE / 2) - e.clientY / cam.zoom;
     clampCam();
-  }, { passive: false });
+  };
+  canvas.addEventListener('wheel', onWheel, { passive: false });
+  canvas3d.addEventListener('wheel', onWheel, { passive: false });
 
   // ---------- Eingabe: Touch ----------
   let touch = null;
@@ -1735,6 +1765,7 @@
   }
 
   function drainChanged() {
+    if (has3D && (sim.allChanged || sim.changed.length)) Render3D.markDirty();
     if (sim.allChanged) {
       for (const ch of chunkMap.values()) ch.dirty = true;
       sim.allChanged = false;
@@ -1884,9 +1915,33 @@
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
     ctx.imageSmoothingEnabled = false;
+    if (has3D) {
+      canvas3d.width = window.innerWidth;
+      canvas3d.height = window.innerHeight;
+      Render3D.resize(window.innerWidth, window.innerHeight);
+    }
     if (sim) clampCam();
   }
   window.addEventListener('resize', resize);
+
+  function applyViewMode() {
+    if (!has3D) return;
+    const on = viewMode === '3d';
+    canvas3d.style.display = on ? 'block' : 'none';
+    const b = $('btnView3d');
+    if (b) { b.classList.toggle('active', on); b.textContent = on ? '🧊' : '🗺'; }
+    try { localStorage.setItem('retro_view', viewMode); } catch (e) { /* ignore */ }
+    if (on && sim) { Render3D.setSim(sim); Render3D.resize(window.innerWidth, window.innerHeight); Render3D.markDirty(); }
+  }
+  if (has3D) {
+    const vb = $('btnView3d');
+    if (vb) vb.addEventListener('click', () => {
+      viewMode = viewMode === '3d' ? '2d' : '3d';
+      applyViewMode();
+      toast(viewMode === '3d' ? t('ui.view3d') : t('ui.view2d'));
+      Sound.sfx.click();
+    });
+  } else { const vb = $('btnView3d'); if (vb) vb.style.display = 'none'; }
 
   function render(now) {
     requestAnimationFrame(render);
@@ -1895,6 +1950,17 @@
     if (!sim) return;
     updateVehicles(dt);
     drainChanged();
+
+    // 3D-Comic-Modus: Welt per Three.js rendern, 2D-Zeichnung überspringen
+    if (is3D()) {
+      const nAlpha3 = nightAlpha();
+      const night3 = nAlpha3 > 0.5;
+      Sound.setNight(night3);
+      if (hover && hover.x >= 0) Render3D.setHover(hover.x, hover.y); else Render3D.setHover(-1, -1);
+      Render3D.frame(now, night3);
+      updateHUD();
+      return;
+    }
 
     ctx.imageSmoothingEnabled = false;
     const z = cam.zoom, ts = TILE * z;
@@ -2966,6 +3032,7 @@
     $('infoPanel').classList.add('hidden');
     updateBudgetPanel();
     centerCam();
+    if (has3D) { Render3D.setSim(sim); applyViewMode(); }
     selectTool('road');
     setSpeed(1);
     Sound.startMusic();

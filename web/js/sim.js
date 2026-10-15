@@ -203,7 +203,7 @@ class Sim {
     // Müll, Kriminalität, Bildung, Verordnungen
     this.crime = new Uint8Array(n);
     this.garbageProduced = 0; this.garbageCap = 0; this.garbageOverflow = 0;
-    this.avgCrime = 0; this.eduLevel = 0;
+    this.avgCrime = 0; this.avgLandv = 0; this.eduLevel = 0;
     this.policies = { smokeDetect: false, recycle: false, proBiz: false, conserve: false, culture: false };
     // Ressort-Finanzierung (0.5–1.5, skaliert Abdeckung & Unterhalt)
     this.funding = { police: 1, fire: 1, school: 1, health: 1, park: 1 };
@@ -1153,17 +1153,19 @@ class Sim {
     if (casinos > 0) happy -= B.CASINO;
     if (this.policies.conserve) happy -= BAL.POLICY.conserve.happy; // Sparzwang nervt
     if (this.policies.culture) happy += BAL.POLICY.culture.happy;   // Kulturprogramm
-    this.avgCrime = 0;
+    this.avgCrime = 0; this.avgLandv = 0;
     if (pop > 0) {
-      let covP = 0, covS = 0, covH = 0, covG = 0, covW = 0, pol = 0, jam = 0, fire = 0, crime = 0, cnt = 0;
+      let covP = 0, covS = 0, covH = 0, covG = 0, covW = 0, pol = 0, jam = 0, fire = 0, crime = 0, landvSum = 0, cnt = 0;
       for (let i = 0; i < n; i++) {
         if (this.st[i] === S_RZONE && this.lvl[i] > 0) {
           covP += this.covPolice[i]; covS += this.covSchool[i];
           covH += this.covHealth[i]; covG += this.covPark[i];
           covW += this.covWater[i]; fire += this.covFire[i];
-          pol += this.poll[i]; jam += this.jamNear[i]; crime += this.crime[i]; cnt++;
+          pol += this.poll[i]; jam += this.jamNear[i]; crime += this.crime[i];
+          landvSum += this.landv[i]; cnt++;
         }
       }
+      if (cnt > 0) this.avgLandv = landvSum / cnt;
       if (cnt > 0) {
         happy += (covP / cnt) * B.COV_POLICE + (covS / cnt) * B.COV_SCHOOL +
           (covH / cnt) * B.COV_HEALTH + (covG / cnt) * B.COV_PARK + (covW / cnt) * B.COV_WATER;
@@ -1480,7 +1482,10 @@ class Sim {
         if (s === S_NUCLEAR) nukes.push(i);
       }
     }
-    const income = Math.round((this.pop * BAL.MONEY.TAX_POP + this.jobs * BAL.MONEY.TAX_JOBS) * this.taxRate / BAL.DEMAND.TAX_NEUTRAL);
+    // Landwert-Bonus: attraktive Viertel bringen mehr Steuern pro Kopf.
+    const landvBonus = 1 + (this.avgLandv || 0) / 100 * BAL.MONEY.LANDV_TAX_F;
+    const income = Math.round((this.pop * BAL.MONEY.TAX_POP + this.jobs * BAL.MONEY.TAX_JOBS)
+      * this.taxRate / BAL.DEMAND.TAX_NEUTRAL * landvBonus);
     const casinoIncome = (this.casinos || 0) * DEFS[S_CASINO].income;
     const interest = Math.round(this.debt * BAL.MONEY.LOAN_RATE);
     // ÖPNV: Linien-Unterhalt vs. Fahrgeld
