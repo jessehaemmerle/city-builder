@@ -477,6 +477,37 @@ function check(name, cond) {
   check('Müll-Overlay auswählbar', await page.evaluate(() => document.getElementById('overlaySel').value === 'garbage'));
   await page.selectOption('#overlaySel', '');
 
+  // --- Neue Features: Hilfe, Werkzeuge, HUD, Budget (Stadtfest/Prognose/Verordnungen) ---
+  await page.click('#btnHelp');
+  await page.waitForTimeout(150);
+  check('Tastenkürzel-Hilfe öffnet', await page.isVisible('#helpPanel'));
+  await page.click('#btnHelpClose');
+  await page.keyboard.press('?');
+  await page.waitForTimeout(150);
+  check('Hilfe auch per „?"-Taste', await page.isVisible('#helpPanel'));
+  await page.keyboard.press('?');
+  check('Bäume- & Bibliothek-Werkzeug in der Toolbar',
+    await page.evaluate(() => !!document.getElementById('tool_tree') && !!document.getElementById('tool_library')));
+  const planted = await page.evaluate(() => {
+    const s = window.RETRO.sim; s.money = 1e6;
+    for (let i = 0; i < s.w * s.h; i++) if (s.st[i] === 0 && s.terr[i] === 0) { const r = s.plantTree(i % s.w, (i / s.w) | 0); return r.ok && s.terr[i] === 3; }
+    return false;
+  });
+  check('Baum pflanzen funktioniert', planted);
+  check('Stadtrang & Zustimmung im HUD', await page.evaluate(() => document.getElementById('uiRank').textContent.includes('🗳')));
+  await page.click('#btnBudget');
+  await page.waitForTimeout(200);
+  check('Monatsprognose im Budget', await page.evaluate(() => document.getElementById('forecastRow').textContent.includes('€')));
+  const fest = await page.evaluate(() => { const s = window.RETRO.sim; s.money = 1e6; return s.money; });
+  await page.click('#btnFestival');
+  await page.waitForTimeout(150);
+  const festOk = await page.evaluate((m) => { const s = window.RETRO.sim; return s.festival > 0 && s.money < m; }, fest);
+  check('Stadtfest per Knopf gestartet', festOk);
+  await page.click('#polTempo30');
+  check('Verordnung Tempo 30 aktivierbar', await page.evaluate(() => window.RETRO.sim.policies.tempo30 === true));
+  await page.click('#polTempo30');
+  await page.click('#btnBudgetClose');
+
   // --- Postkarte ---
   await page.click('#btnCamera');
   await page.waitForTimeout(600);
@@ -521,6 +552,32 @@ function check(name, cond) {
   });
   check('3D-Raycast trifft eine gültige Kachel', built3d.valid);
   check('3D-Klick baut auf der getroffenen Kachel', built3d.built === true);
+  // Lebendige 3D-Welt: Windrad-Rotoren, Schornsteinrauch, Fenster-Lichter
+  await page.evaluate(() => {
+    const s = window.RETRO.sim, m = (s.w / 2) | 0; s.money = 1e7; s.disasters = false;
+    for (let y = m + 6; y <= m + 9; y++) for (let x = m - 6; x <= m + 6; x++) { const i = s.idx(x, y); s.terr[i] = 0; s.st[i] = 0; s.anchor[i] = -1; }
+    s.place(11, m - 6, m + 6); s.place(12, m - 3, m + 6); s.place(5, m + 2, m + 6); s.lvl[s.idx(m + 2, m + 6)] = 3;
+    s.place(39, m + 4, m + 6); s.allChanged = true;
+  });
+  await page.waitForTimeout(500);
+  const fx = await page.evaluate(() => window.Render3D.stats);
+  check('3D: Windrad-Rotoren animiert (' + fx.rotors + ')', fx.rotors >= 1);
+  check('3D: Rauch aus Schornsteinen (' + fx.smoke + ' Wolken)', fx.smoke > 0);
+  check('3D: Nachtlicht-Ebenen für Fenster (' + fx.lights + ')', fx.lights > 0);
+  // Kamera: Q dreht, Doppelklick fokussiert, Kinomodus, Reset
+  const az0 = await page.evaluate(() => window.Render3D.cam.az);
+  await page.keyboard.press('q');
+  check('3D: Q dreht die Kamera', await page.evaluate((a) => window.Render3D.cam.az !== a, az0));
+  const d0 = await page.evaluate(() => window.Render3D.cam.dist);
+  await page.mouse.dblclick(640, 400);
+  await page.waitForTimeout(700);
+  check('3D: Doppelklick fährt heran', await page.evaluate((d) => window.Render3D.cam.dist < d, d0));
+  await page.click('#btnCinema');
+  const azA = await page.evaluate(() => window.Render3D.cam.az);
+  await page.waitForTimeout(600);
+  check('3D: Kinomodus kreist um die Stadt', await page.evaluate((a) => window.Render3D.cam.az > a, azA));
+  await page.click('#btnCinema');
+  await page.keyboard.press('r');
   await page.waitForTimeout(200);
   await page.click('#btnView3d'); // zurück zu 2D
   await page.waitForTimeout(200);

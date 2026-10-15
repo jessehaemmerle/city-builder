@@ -46,6 +46,50 @@ werden Texturauflösung und Schatten automatisch gedrosselt.
 
 ![Retropolis in 3D-Comic-Optik](docs/screenshot-3d.png)
 
+## 🆕 20 neue Features
+
+![Nachts: erleuchtete Fenster, Rauch und Feuerwerk beim Stadtfest](docs/screenshot-3d-night.png)
+
+**Simulation & Stadtpolitik**
+1. **🌳 Bäume pflanzen** — neues Werkzeug (5 €/Baum, malbar). Stadtbäume senken den Smog und
+   **heben den Landwert** der Nachbarfelder.
+2. **📚 Stadtbibliothek** (ab 300 Einw.) — hebt das Bildungsniveau (gedeckelt) und ist eine kleine Attraktion.
+3. **🏘 Stadtränge** — Siedlung → Dorf → Kleinstadt → Stadt → Großstadt → Metropole →
+   Weltmetropole, mit Aufstiegsmeldung und Anzeige in der Statusleiste.
+4. **🗳 Zustimmung & Bürgermeisterwahl** — die Zustimmung (Laune, Steuern, Kriminalität,
+   Finanzlage) steht im HUD; alle 4 Jahre wird gewählt: Wiederwahl bringt einen Bonus, bei
+   Abwahl senkt die neue Mehrheit die Steuern.
+5. **🎉 Stadtfest** — im Budget-Panel buchbar: 3 Monate mehr Laune und Tourismus.
+6. **🚗 Verordnung Tempo 30** — −25 % Straßen-Smog, Gewerbe minimal gebremst.
+7. **☀️ Verordnung Solarförderung** — +30 % Solarstrom gegen feste Monatskosten.
+8. **💶 Fördermittel vom Land** — zufällige Zuschüsse für wachsende Städte.
+9. **🌋 Erdbeben** — neue Katastrophe: Gebäude stürzen ein, Brände brechen aus.
+10. **📅 Jahresrückblick** — jeden Januar Bilanz: Einwohner- und Kassenentwicklung.
+11. **📊 Budget-Prognose** — das erwartete Monatsergebnis im Budget-Panel und als Tooltip
+    auf der Kasse (exakt dieselbe Rechnung wie die echte Abrechnung).
+
+**Lebendige 3D-Welt**
+
+12. **💡 Nachtlichter** — nachts leuchtet ein Teil der Fenster warm auf.
+13. **🌀 Drehende Windrad-Rotoren**.
+14. **💨 Rauchfahnen** aus Fabrikschloten, Kohle-KW, Müllverbrennung und Kühltürmen.
+15. **🚌 Fahrzeuge in 3D** — Autos, ÖPNV-Busse und Züge in Linienfarbe fahren durch die Stadt.
+16. **❄️ Wetter in 3D** — Schneefall im Winter, Regenschauer im Frühling/Herbst.
+17. **🔥 Katastrophen sichtbar** — flackernde Flammen, Hochwasser, Tornado-Trichter und UFO;
+    beim Stadtfest steigt **Feuerwerk** auf.
+18. **🎥 Kinomodus & Kamera-Steuerung** — Kamera kreist automatisch (🎥 / `K`), `Q`/`E` drehen,
+    `WASD` schwenken, `R` setzt zurück.
+
+**Bedienung**
+
+19. **⌨ Tastenkürzel-Hilfe** — `?` / `F1` oder ❓ zeigt alle Shortcuts.
+20. **🎯 Kamerafahrten in 3D** — Doppelklick fährt weich auf eine Stelle zu; Minimap-Klicks und
+    Sprünge aus Ereignis-/Bezirks-Panels zentrieren auch die 3D-Kamera.
+
+Alle Zufallsereignisse (Fördermittel, Erdbeben) sind **deterministisch pro Seed** und lassen
+bestehende Zufallsfolgen unverändert; Stadtfest und Jahresbilanz werden mitgespeichert
+(Save/Load bleibt bitgenau).
+
 ## 🚀 Schnellstart
 
 ```bash

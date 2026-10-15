@@ -22,6 +22,7 @@
   <div class="stat" id="uiWater">🚰 0/0</div>
   <div class="stat" id="uiGarbage" title="Müll: Aufkommen / Kapazität">🗑 0/0</div>
   <div class="stat" id="uiHealth" title="Gesundheit / Kriminalität / Bildung">💚 0%</div>
+  <div class="stat" id="uiRank">🏘</div>
   <div class="stat" id="uiEcon">➡</div>
   <div class="stat" id="uiDate">1. Jan 1990</div>
 
@@ -63,6 +64,8 @@
 
   <div class="group">
     <button class="btn" id="btnView3d" title="2D / 3D umschalten">🧊</button>
+    <button class="btn" id="btnCinema" title="Kinomodus (K)">🎥</button>
+    <button class="btn" id="btnHelp" title="Tastenkürzel (?)">❓</button>
     <button class="btn" id="btnTransit">🚏</button>
     <button class="btn" id="btnBbs" title="RETRO-NET BBS">📟</button>
     <button class="btn" id="btnCamera">📸</button>
@@ -107,11 +110,33 @@
   <button class="btn" id="btnTcCancel"></button>
 </div>
 
+<!-- Tastenkürzel-Hilfe -->
+<div id="helpPanel" class="panel dialog hidden">
+  <h2 data-i18n="help.title"></h2>
+  <table class="helpTable">
+    <tr><td><kbd>1</kbd>–<kbd>0</kbd></td><td data-i18n="help.tools"></td></tr>
+    <tr><td><kbd>Leertaste</kbd></td><td data-i18n="help.pause"></td></tr>
+    <tr><td><kbd>Strg</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd></td><td data-i18n="help.undo"></td></tr>
+    <tr><td><kbd>Esc</kbd></td><td data-i18n="help.esc"></td></tr>
+    <tr><td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / ←↑↓→</td><td data-i18n="help.pan"></td></tr>
+    <tr><td><kbd>+</kbd> / <kbd>−</kbd></td><td data-i18n="help.zoom"></td></tr>
+    <tr><td><kbd>Q</kbd> / <kbd>E</kbd></td><td data-i18n="help.rotate"></td></tr>
+    <tr><td><kbd>R</kbd></td><td data-i18n="help.reset"></td></tr>
+    <tr><td><kbd>K</kbd></td><td data-i18n="help.cinema"></td></tr>
+    <tr><td data-i18n="help.mouseR"></td><td data-i18n="help.mouseRTxt"></td></tr>
+    <tr><td data-i18n="help.dbl"></td><td data-i18n="help.dblTxt"></td></tr>
+    <tr><td><kbd>?</kbd> / <kbd>F1</kbd></td><td data-i18n="help.help"></td></tr>
+  </table>
+  <div class="row right"><button class="btn" id="btnHelpClose" data-i18n="ui.close"></button></div>
+</div>
+
 <!-- Budget & Optionen -->
 <div id="budgetPanel" class="panel dialog hidden">
   <h2 data-i18n="ui.budget"></h2>
   <div id="budgetRows"></div>
   <div id="budgetStatus" class="cityStatus"></div>
+  <div class="row" id="forecastRow"></div>
+  <div class="row"><button class="btn" id="btnFestival"></button></div>
   <div class="row" id="loanRow">
     <span id="debtLabel"></span>
     <span class="loanBtns">
@@ -126,6 +151,8 @@
     <label class="row"><input type="checkbox" id="polProBiz"> <span data-i18n="ui.pol.proBiz"></span><small data-i18n="ui.pol.proBizTip"></small></label>
     <label class="row"><input type="checkbox" id="polConserve"> <span data-i18n="ui.pol.conserve"></span><small data-i18n="ui.pol.conserveTip"></small></label>
     <label class="row"><input type="checkbox" id="polCulture"> <span data-i18n="ui.pol.culture"></span><small data-i18n="ui.pol.cultureTip"></small></label>
+    <label class="row"><input type="checkbox" id="polTempo30"> <span data-i18n="ui.pol.tempo30"></span><small data-i18n="ui.pol.tempo30Tip"></small></label>
+    <label class="row"><input type="checkbox" id="polSolarSub"> <span data-i18n="ui.pol.solarSub"></span><small data-i18n="ui.pol.solarSubTip"></small></label>
   </div>
   <h3 data-i18n="ui.funding" style="margin:8px 0 2px"></h3>
   <div id="fundingList">

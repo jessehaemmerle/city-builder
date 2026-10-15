@@ -124,10 +124,12 @@
     { id: 'airport',  mode: 'single', s: S_AIRPORT },
     { id: 'runway',   mode: 'line', s: S_RUNWAY },
     { id: 'park',     key: '0', mode: 'single', s: S_PARK },
+    { id: 'tree',     mode: 'paint', cost: 5 },
     { id: 'police',   mode: 'single', s: S_POLICE },
     { id: 'firedep',  mode: 'single', s: S_FIREDEP },
     { id: 'school',   mode: 'single', s: S_SCHOOL },
     { id: 'university', mode: 'single', s: S_UNIVERSITY },
+    { id: 'library',  mode: 'single', s: S_LIBRARY },
     { id: 'hospital', mode: 'single', s: S_HOSPITAL },
     { id: 'stadium',  mode: 'single', s: S_STADIUM },
     { id: 'townhall', mode: 'single', s: S_TOWNHALL },
@@ -174,6 +176,8 @@
       case 'amuse': return Sprites.store.amuse;
       case 'treatment': return Sprites.store.treatment;
       case 'university': return Sprites.store.university;
+      case 'library': return Sprites.store.library;
+      case 'tree': return Sprites.get('tree', 0);
       case 'landfill': return Sprites.store.landfill;
       case 'inciner': return Sprites.store.inciner;
       case 'recycle': return Sprites.store.recycle;
@@ -408,6 +412,7 @@
     cam.x = (x + 0.5) * TILE - canvas.width / cam.zoom / 2;
     cam.y = (y + 0.5) * TILE - canvas.height / cam.zoom / 2;
     clampCam();
+    if (has3D) Render3D.centerOn(x, y);
   }
 
   // ---------- Einwohner-Panel: Demografie + Stichprobe echter Bürger:innen ----------
@@ -768,6 +773,7 @@
       const before = snapTiles(idxs);
       let r;
       if (tl.id === 'dozer') r = sim.bulldoze(x, y);
+      else if (tl.id === 'tree') r = sim.plantTree(x, y);
       else if (tl.s) r = sim.place(tl.s, x, y);
       else continue;
       if (r.ok) {
@@ -985,6 +991,12 @@
   };
   canvas.addEventListener('mousedown', onMouseDown);
   canvas3d.addEventListener('mousedown', onMouseDown);
+  // Doppelklick in 3D: Kamera fährt auf die Kachel und zoomt heran
+  canvas3d.addEventListener('dblclick', (e) => {
+    if (!is3D()) return;
+    const p = Render3D.pick(e.clientX, e.clientY);
+    if (p && p.x >= 0) Render3D.focus(p.x, p.y);
+  });
 
   window.addEventListener('mousemove', (e) => {
     if (panning) {
@@ -1108,6 +1120,22 @@
       if (transitPick !== null) { endPicking(); return; }
       selectTool('point');
       return;
+    }
+    if (e.key === '?' || e.key === 'F1') { e.preventDefault(); toggleHelp(); return; }
+    if (is3D()) {
+      // 3D-Kamera: Q/E drehen, WASD/Pfeile schwenken, +/- zoomen, R zurücksetzen, K Kinomodus
+      const k = e.key.toLowerCase();
+      if (k === 'q') { Render3D.orbit(-40, 0); return; }
+      if (k === 'e') { Render3D.orbit(40, 0); return; }
+      if (k === 'r') { Render3D.resetCam(); return; }
+      if (k === 'k') { toggleCinema(); return; }
+      if (e.key === '+') { Render3D.zoom(-6); return; }
+      if (e.key === '-') { Render3D.zoom(6); return; }
+      const P3 = 30;
+      if (e.key === 'ArrowUp' || k === 'w') { Render3D.panCam(0, -P3); return; }
+      if (e.key === 'ArrowDown' || k === 's') { Render3D.panCam(0, P3); return; }
+      if (e.key === 'ArrowLeft' || k === 'a') { Render3D.panCam(-P3, 0); return; }
+      if (e.key === 'ArrowRight' || k === 'd') { Render3D.panCam(P3, 0); return; }
     }
     if (e.key === '+') { cam.zoom = Math.min(4, cam.zoom + 1); clampCam(); return; }
     if (e.key === '-') { cam.zoom = Math.max(1, cam.zoom - 1); clampCam(); return; }
@@ -1266,6 +1294,11 @@
   function fmtMoney(v) {
     return '€ ' + Math.round(v).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
   }
+  function nextElectionYear() {
+    const E = BAL.ELECTION.EVERY, yrs = sim.year - sim.startYear;
+    return sim.startYear + (Math.floor(yrs / E) + 1) * E;
+  }
+
   function updateHUD() {
     if (!sim) return;
     const m = $('uiMoney');
@@ -1291,6 +1324,15 @@
     hl.textContent = '💚 ' + Math.round(sim.healthIndex) + '%'
       + ' 🚔' + Math.round(sim.avgCrime) + '% 🎓' + Math.round(sim.eduLevel * 100) + '%';
     hl.style.color = (sim.healthIndex < 45 || crimeBad) ? '#ff6b6b' : '';
+    // Stadtrang + Zustimmung zum Bürgermeister (+ Stadtfest-Hinweis)
+    const rk = $('uiRank');
+    if (rk) {
+      rk.textContent = '🏘 ' + t(BAL.RANKS[sim.rank || 0][1]) + ' · 🗳 ' + sim.approval + '%' + (sim.festival > 0 ? ' 🎉' : '');
+      rk.style.color = sim.approval < BAL.ELECTION.PASS ? '#ff6b6b' : '';
+      rk.title = t('ui.rankTip', { next: nextElectionYear() });
+    }
+    // Geld-Tooltip: Monatsprognose
+    m.title = t('ui.forecast') + ': ' + (sim.forecast() >= 0 ? '+' : '') + sim.forecast() + ' €';
     // Konjunktur-Anzeige
     const ec = sim.econ;
     const eco = $('uiEcon');
@@ -1303,7 +1345,7 @@
     $('rciR').style.height = Math.max(0, sim.demandR) * 100 + '%';
     $('rciC').style.height = Math.max(0, sim.demandC) * 100 + '%';
     $('rciI').style.height = Math.max(0, sim.demandI) * 100 + '%';
-    for (const id of ['stadium', 'townhall', 'monument', 'casino', 'subway', 'port', 'university', 'airport', 'hotel', 'amuse']) {
+    for (const id of ['stadium', 'townhall', 'monument', 'casino', 'subway', 'port', 'university', 'airport', 'hotel', 'amuse', 'library']) {
       const el = $('tool_' + id);
       const def = DEFS[toolById[id].s];
       if (el && def.minPop) el.classList.toggle('locked', sim.pop < def.minPop ||
@@ -1901,6 +1943,7 @@
             [S_MONUMENT]: 'monument', [S_CASINO]: 'casino', [S_SOLAR]: 'solar',
             [S_BUSSTOP]: 'busstop', [S_TRAINSTATION]: 'trainstation', [S_SUBWAY]: 'subway',
             [S_HOTEL]: 'hotel', [S_INCINER]: 'inciner', [S_RECYCLE]: 'recycle',
+            [S_LIBRARY]: 'library',
           };
           if (map[s]) g.drawImage(S(map[s]), lx, ly);
         }
@@ -1924,12 +1967,58 @@
   }
   window.addEventListener('resize', resize);
 
+  // Weltzustand für den 3D-Renderer: Fahrzeuge, Wetter, Katastrophen-Akteure
+  function world3D(now) {
+    const veh = [];
+    for (const v of cars) {
+      const side = 0.18;
+      const ox = v.dir === 0 ? side : v.dir === 2 ? -side : 0, oy = v.dir === 1 ? side : v.dir === 3 ? -side : 0;
+      veh.push({ x: v.fx + (v.tx - v.fx) * v.prog + ox, y: v.fy + (v.ty - v.fy) * v.prog + oy,
+        dir: v.dir, color: v.color, kind: 'car' });
+    }
+    for (const v of trains) veh.push({ x: v.fx + (v.tx - v.fx) * v.prog, y: v.fy + (v.ty - v.fy) * v.prog, dir: v.dir, color: '#c9484f', kind: 'train' });
+    for (const L of sim.lines) {
+      const entry = lineVeh.get(L.id);
+      if (!entry) continue;
+      for (const v of entry.vs) {
+        const k = Math.min(entry.fp.length - 2, Math.floor(v.pos)), f = v.pos - k;
+        const a = entry.fp[k], b = entry.fp[k + 1];
+        const ax = a % sim.w, ay = (a / sim.w) | 0, bx = b % sim.w, by = (b / sim.w) | 0;
+        veh.push({ x: ax + (bx - ax) * f, y: ay + (by - ay) * f, dir: ay === by ? (bx > ax ? 1 : 3) : (by > ay ? 2 : 0),
+          color: L.color, kind: L.type === 'bus' ? 'bus' : 'train' });
+      }
+    }
+    const season = sim.season;
+    const rain = (season === 'spring' || season === 'autumn') && (Math.floor(now / 9000) % 3 === 0);
+    return {
+      vehicles: veh,
+      weather: !weatherEnabled ? null : season === 'winter' ? 'snow' : rain ? 'rain' : null,
+      actors: sim.actors,
+      festival: sim.festival > 0,
+    };
+  }
+
+  // Kinomodus: Kamera kreist langsam um die Stadt
+  let cinema = false;
+  function toggleCinema() {
+    if (!has3D) return;
+    cinema = !cinema;
+    Render3D.setCinematic(cinema);
+    const b = $('btnCinema'); if (b) b.classList.toggle('active', cinema);
+    toast(cinema ? t('ui.cinemaOn') : t('ui.cinemaOff'));
+  }
+
+  // Tastenkürzel-Hilfe
+  function toggleHelp() { $('helpPanel').classList.toggle('hidden'); }
+
   function applyViewMode() {
     if (!has3D) return;
     const on = viewMode === '3d';
     canvas3d.style.display = on ? 'block' : 'none';
     const b = $('btnView3d');
     if (b) { b.classList.toggle('active', on); b.textContent = on ? '🧊' : '🗺'; }
+    const bc = $('btnCinema'); if (bc) bc.style.display = on ? '' : 'none';
+    if (!on && cinema) toggleCinema();
     try { localStorage.setItem('retro_view', viewMode); } catch (e) { /* ignore */ }
     if (on && sim) { Render3D.setSim(sim); Render3D.resize(window.innerWidth, window.innerHeight); Render3D.markDirty(); }
   }
@@ -1957,7 +2046,7 @@
       const night3 = nAlpha3 > 0.5;
       Sound.setNight(night3);
       if (hover && hover.x >= 0) Render3D.setHover(hover.x, hover.y); else Render3D.setHover(-1, -1);
-      Render3D.frame(now, night3);
+      Render3D.frame(now, night3, world3D(now));
       updateHUD();
       return;
     }
@@ -2313,6 +2402,7 @@
     cam.x = fx * sim.w * TILE - canvas.width / cam.zoom / 2;
     cam.y = fy * sim.h * TILE - canvas.height / cam.zoom / 2;
     clampCam();
+    if (has3D) Render3D.centerOn(Math.floor(fx * sim.w), Math.floor(fy * sim.h));
   });
 
   // ---------- Statistik ----------
@@ -2657,6 +2747,16 @@
     $('polProBiz').checked = sim.policies.proBiz;
     $('polConserve').checked = sim.policies.conserve;
     $('polCulture').checked = sim.policies.culture;
+    $('polTempo30').checked = sim.policies.tempo30;
+    $('polSolarSub').checked = sim.policies.solarSub;
+    // Stadtfest-Knopf + Monatsprognose
+    const fc = sim.forecast();
+    $('forecastRow').innerHTML = '<span>📊 ' + t('ui.forecast') + '</span><b class="' + (fc >= 0 ? 'plus' : 'minus') + '">' +
+      (fc >= 0 ? '+' : '') + fc + ' €</b>';
+    const fb = $('btnFestival');
+    fb.disabled = sim.festival > 0;
+    fb.textContent = sim.festival > 0 ? t('ui.festivalActive', { n: sim.festival })
+      : t('ui.festival', { cost: Math.round(BAL.FESTIVAL.COST + sim.pop * BAL.FESTIVAL.COST_POP) });
     $('chkWeather').checked = weatherEnabled;
     // Ressort-Finanzierungsregler spiegeln
     [['fundPolice', 'police'], ['fundFire', 'fire'], ['fundSchool', 'school'],
@@ -2666,9 +2766,20 @@
     });
   }
 
+  $('btnFestival').addEventListener('click', () => {
+    if (!sim) return;
+    const r = sim.holdFestival();
+    if (r.ok) { Sound.sfx.milestone(); sim.computeStats(); updateBudgetPanel(); }
+    else { toast('❌ ' + t(r.reason), 'bad'); Sound.sfx.error(); }
+  });
+  $('btnCinema').addEventListener('click', toggleCinema);
+  $('btnHelp').addEventListener('click', toggleHelp);
+  $('btnHelpClose').addEventListener('click', toggleHelp);
+
   // Verordnungs-Checkboxen → sim.policies (Neuberechnung anstoßen)
   [['polSmokeDetect', 'smokeDetect'], ['polRecycle', 'recycle'], ['polProBiz', 'proBiz'],
-   ['polConserve', 'conserve'], ['polCulture', 'culture']].forEach(([id, key]) => {
+   ['polConserve', 'conserve'], ['polCulture', 'culture'], ['polTempo30', 'tempo30'],
+   ['polSolarSub', 'solarSub']].forEach(([id, key]) => {
     $(id).addEventListener('change', (e) => {
       if (!sim) return;
       sim.policies[key] = e.target.checked;

@@ -18,7 +18,7 @@
     S_SOLAR = 21, S_BUSSTOP = 22, S_TRAINSTATION = 23, S_SUBWAY = 24, S_PORT = 25, S_PIPE = 26,
     S_HOTEL = 27, S_AMUSE = 28, S_HIGHWAY = 29, S_LANDFILL = 30, S_INCINER = 31,
     S_RECYCLE = 32, S_AIRPORT = 33, S_NUCLEAR = 34, S_TREATMENT = 35, S_UNIVERSITY = 36,
-    S_RUNWAY = 37, S_PIER = 38;
+    S_RUNWAY = 37, S_PIER = 38, S_LIBRARY = 39;
   const T_GRASS = 0, T_WATER = 1, T_SAND = 2, T_TREE = 3;
 
   const BIG = { [S_COAL]: 1, [S_STADIUM]: 1, [S_PORT]: 1, [S_AMUSE]: 1, [S_LANDFILL]: 1, [S_AIRPORT]: 1, [S_NUCLEAR]: 1, [S_TREATMENT]: 1, [S_UNIVERSITY]: 1 };
@@ -84,14 +84,20 @@
   }
 
   // Fensterreihen an einer Box (kleine helle/dunkle Felder)
+  let LIGHTS = null; // sammelt Fensterflächen für die Nacht-Lichter des aktuellen Modells
   function windows(parts, w, hBody, d, yBase, wallCol, winCol, floors, cols) {
     const fh = hBody / (floors + 0.5), step = fh;
     for (let f = 0; f < floors; f++) {
       const yy = yBase + fh * 0.6 + f * step;
       for (let c = 0; c < cols; c++) {
-        const xx = -w / 2 + (w / (cols + 1)) * (c + 1);
-        parts.push(box(w / (cols + 2.5), fh * 0.5, 0.02, xx, yy, d / 2 + 0.005, winCol));
-        parts.push(box(w / (cols + 2.5), fh * 0.5, 0.02, xx, yy, -d / 2 - 0.005, winCol));
+        const xx = -w / 2 + (w / (cols + 1)) * (c + 1), ww = w / (cols + 2.5);
+        parts.push(box(ww, fh * 0.5, 0.02, xx, yy, d / 2 + 0.005, winCol));
+        parts.push(box(ww, fh * 0.5, 0.02, xx, yy, -d / 2 - 0.005, winCol));
+        // Nacht: nur ein Teil der Fenster ist erleuchtet (deterministisch)
+        if (LIGHTS && ((f * 7 + c * 3) % 5) < 3) {
+          LIGHTS.push(box(ww, fh * 0.5, 0.02, xx, yy, d / 2 + 0.014, '#ffffff'));
+          LIGHTS.push(box(ww, fh * 0.5, 0.02, xx, yy, -d / 2 - 0.014, '#ffffff'));
+        }
       }
     }
   }
@@ -181,7 +187,8 @@
       case S_FIREDEP: { const p = []; p.push(box(0.84, 0.7, 0.8, 0, 0, 0, '#c9484f')); p.push(box(0.9, 0.08, 0.86, 0, 0.7, 0, '#8d3742')); p.push(box(0.5, 0.45, 0.02, 0, 0.05, 0.41, '#3a2a2a')); p.push(box(0.14, 1.0, 0.14, 0.3, 0.7, -0.1, '#a83a40')); return p; }
       case S_SCHOOL: { const p = genericModel(0.85, '#e0a030', '#a06a18'); p.push(box(0.03, 0.4, 0.03, 0.36, 0.85, 0.36, '#8a8a92')); p.push(box(0.2, 0.12, 0.02, 0.46, 1.1, 0.36, '#4f8fdc')); return p; }
       case S_HOSPITAL: { const p = genericModel(1.4, '#f2f2ef', '#c7cfdd'); p.push(box(0.26, 0.26, 0.04, 0, 0.7, 0.43, '#c9484f')); p.push(box(0.08, 0.26, 0.04, 0, 0.7, 0.43, '#c9484f')); p.push(box(0.3, 0.04, 0.3, 0, 1.4, 0, '#8a94a4')); p.push(cyl(0.04, 0.04, 0.2, 0, 1.44, 0, '#5c6784')); return p; }
-      case S_WIND: { const p = []; p.push(cyl(0.05, 0.08, 1.9, 0, 0, 0, '#eef2f7')); p.push(ball(0.09, 0, 1.9, 0, '#dfe6ef')); for (let a = 0; a < 3; a++) { const g = box(0.05, 0.9, 0.14, 0, 0, 0, '#f2f2ef'); g.rotateZ(a * Math.PI * 2 / 3); g.translate(0, 1.95, 0.05); p.push(g); } return p; }
+      case S_WIND: { const p = []; p.push(cyl(0.05, 0.08, 1.9, 0, 0, 0, '#eef2f7')); p.push(box(0.14, 0.12, 0.26, 0, 1.86, 0, '#dfe6ef')); return p; }
+      case S_LIBRARY: { const p = [box(0.86, 0.12, 0.8, 0, 0, 0, '#c7c0ae')]; p.push(box(0.76, 0.62, 0.62, 0, 0.12, -0.04, '#e8dfc8')); for (let c = -2; c <= 2; c++) p.push(cyl(0.035, 0.035, 0.6, c * 0.16, 0.12, 0.32, '#f2f2ef', 8)); p.push(box(0.84, 0.08, 0.74, 0, 0.74, 0, '#b8ad92')); p.push(gable(0.84, 0.26, 0.74, 0, 0.82, 0, '#8d3742')); p.push(box(0.16, 0.26, 0.02, 0, 0.12, 0.32, '#5b3a22')); windows(p, 0.76, 0.62, 0.62, 0.12, '#e8dfc8', '#fff0c0', 1, 4); return p; }
       case S_COAL: { const p = []; p.push(box(1.5, 0.9, 1.4, 0, 0, 0, '#565c6b')); p.push(box(1.56, 0.1, 1.46, 0, 0.9, 0, '#3a4048')); p.push(cyl(0.16, 0.2, 1.3, -0.4, 0.9, -0.3, '#7a4a3a')); p.push(cyl(0.16, 0.2, 1.3, 0.1, 0.9, -0.3, '#7a4a3a')); p.push(box(0.6, 0.5, 0.5, 0.4, 0, 0.4, '#454a5a')); return p; }
       case S_SOLAR: { const p = [box(0.86, 0.12, 0.84, 0, 0, 0, '#2f3f66')]; for (let r = -1; r <= 1; r++) { const g = box(0.8, 0.03, 0.22, 0, 0.12, r * 0.27, '#1a2a52'); g.rotateX(-0.4); g.translate(0, 0.08, r * 0.27); p.push(g); } return p; }
       case S_NUCLEAR: { const p = [box(1.4, 0.6, 1.3, 0, 0, 0.2, '#c8ccd6')]; p.push(cyl(0.3, 0.42, 1.0, -0.4, 0, -0.4, '#d6dae2', 14)); p.push(cyl(0.3, 0.42, 1.0, 0.4, 0, -0.4, '#d6dae2', 14)); p.push(cyl(0.3, 0.26, 0.2, -0.4, 1.0, -0.4, '#eef2f7', 14)); p.push(cyl(0.3, 0.26, 0.2, 0.4, 1.0, -0.4, '#eef2f7', 14)); p.push(box(0.2, 0.2, 0.2, 0.5, 0.6, 0.4, '#f0d95c')); return p; }
@@ -210,10 +217,13 @@
   function modelFor(type, level) {
     const key = type + '_' + (level || 0);
     if (MODELS[key]) return MODELS[key];
+    LIGHTS = [];
     const parts = modelParts(type, level || 0);
+    const lightParts = LIGHTS; LIGHTS = null;
     const geo = merge(parts);
     const out = outlineGeo(geo, 0.035);
-    MODELS[key] = { geo, out };
+    const lights = lightParts.length ? merge(lightParts) : null;
+    MODELS[key] = { geo, out, lights };
     return MODELS[key];
   }
 
@@ -255,6 +265,7 @@
     const hg = new THREE.BoxGeometry(1, 0.14, 1);
     hoverMesh = new THREE.Mesh(hg, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.4 }));
     hoverMesh.visible = false; scene.add(hoverMesh);
+    initFx();
     inited = true;
   }
 
@@ -383,10 +394,67 @@
     return TREEGEO;
   }
 
+  // ============================================================
+  //  Lebendige Welt: Nachtlichter, Rotoren, Rauch, Fahrzeuge,
+  //  Wetter, Katastrophen, Feuerwerk (alles InstancedMesh/Points)
+  // ============================================================
+  let lightGroup, rotorMesh = null, rotorOut = null, windList = [], emitters = [];
+  let smokeMesh, carMesh, busMesh, trainMesh, flameMesh, floodMesh, tornadoMesh, ufoMesh;
+  let weatherPts, weatherPos, fireworkPts, fwPos, fwCol, fwBursts = [];
+  const MAX_SMOKE = 480, MAX_CARS = 160, MAX_BUS = 80, MAX_TRAIN = 80, MAX_FLAME = 200, MAX_FLOOD = 400;
+  const WEATHER_N = 1400, FW_BURSTS = 5, FW_PER = 36;
+  const dmy = new THREE.Object3D();
+
+  function im(geo, mat, n) { const m = new THREE.InstancedMesh(geo, mat, n); m.count = 0; m.frustumCulled = false; scene.add(m); return m; }
+  function initFx() {
+    lightGroup = new THREE.Group(); scene.add(lightGroup);
+    smokeMesh = im(new THREE.IcosahedronGeometry(0.13, 0), new THREE.MeshBasicMaterial({ color: 0xd8d8de, transparent: true, opacity: 0.55, depthWrite: false }), MAX_SMOKE);
+    const toon = (c) => new THREE.MeshToonMaterial({ color: c, gradientMap: GRAD });
+    const carGeo = new THREE.BoxGeometry(0.34, 0.15, 0.18); carGeo.translate(0, 0.1, 0);
+    carMesh = im(carGeo, toon(0xffffff), MAX_CARS);
+    carMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX_CARS * 3), 3);
+    const busGeo = new THREE.BoxGeometry(0.62, 0.24, 0.24); busGeo.translate(0, 0.14, 0);
+    busMesh = im(busGeo, toon(0xffffff), MAX_BUS);
+    busMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX_BUS * 3), 3);
+    const trGeo = new THREE.BoxGeometry(0.8, 0.26, 0.28); trGeo.translate(0, 0.15, 0);
+    trainMesh = im(trGeo, toon(0xffffff), MAX_TRAIN);
+    trainMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX_TRAIN * 3), 3);
+    const fl = new THREE.ConeGeometry(0.28, 0.9, 6); fl.translate(0, 0.45, 0);
+    flameMesh = im(fl, new THREE.MeshBasicMaterial({ color: 0xff8a2a, transparent: true, opacity: 0.9 }), MAX_FLAME);
+    const fg = new THREE.BoxGeometry(1, 0.06, 1);
+    floodMesh = im(fg, new THREE.MeshBasicMaterial({ color: 0x3f8fe0, transparent: true, opacity: 0.55 }), MAX_FLOOD);
+    const tg = new THREE.ConeGeometry(1.1, 4.5, 10, 1, true); tg.rotateX(Math.PI); tg.translate(0, 2.25, 0);
+    tornadoMesh = new THREE.Mesh(tg, new THREE.MeshBasicMaterial({ color: 0x8a8f9e, transparent: true, opacity: 0.7, side: THREE.DoubleSide }));
+    tornadoMesh.visible = false; scene.add(tornadoMesh);
+    const ug = merge([cyl(0.7, 0.9, 0.2, 0, 0, 0, '#9aa0ad', 16), ball(0.38, 0, 0.05, 0, '#7ad0e0')]);
+    ufoMesh = new THREE.Mesh(ug, new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: GRAD }));
+    ufoMesh.visible = false; scene.add(ufoMesh);
+    // Wetter-Partikel
+    const wg = new THREE.BufferGeometry();
+    weatherPos = new Float32Array(WEATHER_N * 3);
+    for (let i = 0; i < WEATHER_N; i++) { weatherPos[i * 3] = (hash(i, 1) - 0.5) * 60; weatherPos[i * 3 + 1] = hash(i, 2) * 26; weatherPos[i * 3 + 2] = (hash(i, 3) - 0.5) * 60; }
+    wg.setAttribute('position', new THREE.BufferAttribute(weatherPos, 3));
+    weatherPts = new THREE.Points(wg, new THREE.PointsMaterial({ color: 0xffffff, size: 0.18, transparent: true, opacity: 0.85, depthWrite: false }));
+    weatherPts.frustumCulled = false; weatherPts.visible = false; scene.add(weatherPts);
+    // Feuerwerk (Stadtfest)
+    const fwg = new THREE.BufferGeometry();
+    fwPos = new Float32Array(FW_BURSTS * FW_PER * 3); fwCol = new Float32Array(FW_BURSTS * FW_PER * 3);
+    fwg.setAttribute('position', new THREE.BufferAttribute(fwPos, 3));
+    fwg.setAttribute('color', new THREE.BufferAttribute(fwCol, 3));
+    fireworkPts = new THREE.Points(fwg, new THREE.PointsMaterial({ size: 0.35, vertexColors: true, transparent: true, opacity: 0.95, depthWrite: false, blending: THREE.AdditiveBlending }));
+    fireworkPts.frustumCulled = false; fireworkPts.visible = false; scene.add(fireworkPts);
+    for (let b = 0; b < FW_BURSTS; b++) fwBursts.push({ t0: -999, x: 0, y: 0, z: 0, c: new THREE.Color() });
+  }
+
+  function rotorGeo() {
+    const parts = [ball(0.07, 0, -0.07, 0, '#dfe6ef')];
+    for (let a = 0; a < 3; a++) { const g = box(0.06, 0.8, 0.03, 0, 0, 0, '#f2f2ef'); g.translate(0, 0.42, 0); g.rotateZ(a * Math.PI * 2 / 3); parts.push(g); }
+    return merge(parts);
+  }
+
   function rebuildBuildings() {
-    while (buildGroup.children.length) buildGroup.remove(buildGroup.children[0]);
-    while (outlineGroup.children.length) outlineGroup.remove(outlineGroup.children[0]);
-    while (treeGroup.children.length) treeGroup.remove(treeGroup.children[0]);
+    for (const g of [buildGroup, outlineGroup, treeGroup, lightGroup]) while (g.children.length) g.remove(g.children[0]);
+    windList = []; emitters = [];
     // Gruppieren nach (Typ,Level)
     const groups = {}, trees = [[], [], []];
     for (let i = 0; i < W * H; i++) {
@@ -400,49 +468,184 @@
       const key = s + '_' + lv;
       (groups[key] || (groups[key] = [])).push(i);
     }
-    const dummy = new THREE.Object3D();
+    const dummy = new THREE.Object3D(), lightMat = new THREE.MeshBasicMaterial({ color: 0xffd27a });
+    const addEmitter = (wx, wz, rot, lx, ly, lz, fp) => {
+      if (emitters.length >= MAX_SMOKE / 6) return;
+      const c = Math.cos(rot), sn = Math.sin(rot);
+      emitters.push({ x: wx + (lx * c + lz * sn) * fp, y: ly, z: wz + (-lx * sn + lz * c) * fp });
+    };
     for (const key in groups) {
       const [type, lv] = key.split('_').map(Number);
       const list = groups[key], m = modelFor(type, lv);
       const mat = new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: GRAD });
-      const im = new THREE.InstancedMesh(m.geo, mat, list.length);
-      im.castShadow = shadows; im.receiveShadow = shadows;
-      const omat = new THREE.MeshBasicMaterial({ color: 0x14141f, side: THREE.BackSide });
-      const om = new THREE.InstancedMesh(m.out, omat, list.length);
+      const bm = new THREE.InstancedMesh(m.geo, mat, list.length);
+      bm.castShadow = shadows; bm.receiveShadow = shadows;
+      const om = new THREE.InstancedMesh(m.out, new THREE.MeshBasicMaterial({ color: 0x14141f, side: THREE.BackSide }), list.length);
+      const lm = m.lights ? new THREE.InstancedMesh(m.lights, lightMat, list.length) : null;
+      if (lm) lm.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(list.length * 3), 3);
       const tint = (type >= S_RZONE && type <= S_IZONE);
-      if (tint) im.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(list.length * 3), 3);
+      if (tint) bm.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(list.length * 3), 3);
       list.forEach((i, k) => {
         const x = i % W, y = (i / W) | 0, fp = BIG[type] ? 2 : 1;
         const wx = worldX(x) + (fp - 1) / 2, wz = worldZ(y) + (fp - 1) / 2;
-        const rot = (type >= S_RZONE && type <= S_IZONE) ? (Math.floor(hash(x, y) * 4) * Math.PI / 2) : 0;
+        const rot = tint ? (Math.floor(hash(x, y) * 4) * Math.PI / 2) : 0;
         dummy.position.set(wx, 0, wz); dummy.rotation.set(0, rot, 0); dummy.scale.set(fp, 1, fp); dummy.updateMatrix();
-        im.setMatrixAt(k, dummy.matrix); om.setMatrixAt(k, dummy.matrix);
-        if (tint) { const v = 0.86 + hash(x * 7, y * 11) * 0.26; _c.setRGB(v, v, v); im.setColorAt(k, _c); }
+        bm.setMatrixAt(k, dummy.matrix); om.setMatrixAt(k, dummy.matrix);
+        if (lm) { lm.setMatrixAt(k, dummy.matrix); const v = 0.45 + hash(x * 3, y * 5) * 0.55; _c.setRGB(v, v * 0.92, v * 0.7); lm.setColorAt(k, _c); }
+        if (tint) { const v = 0.86 + hash(x * 7, y * 11) * 0.26; _c.setRGB(v, v, v); bm.setColorAt(k, _c); }
+        // Rauch-Emitter an Schornsteinen, Windrad-Naben für Rotoren
+        if (type === S_IZONE) addEmitter(wx, wz, rot, 0.3, ([0, 0.5, 0.7, 0.95, 1.2][lv] || 0.6) + 0.56 + lv * 0.12, -0.2, 1);
+        else if (type === S_COAL) { addEmitter(wx, wz, 0, -0.4, 2.2, -0.3, 2); addEmitter(wx, wz, 0, 0.1, 2.2, -0.3, 2); }
+        else if (type === S_INCINER) addEmitter(wx, wz, 0, 0.28, 2.3, -0.2, 1);
+        else if (type === S_NUCLEAR) { addEmitter(wx, wz, 0, -0.4, 1.25, -0.4, 2); addEmitter(wx, wz, 0, 0.4, 1.25, -0.4, 2); }
+        else if (type === S_WIND) windList.push({ x: wx, z: wz, ph: hash(x, y) * 6.28 });
       });
-      im.instanceMatrix.needsUpdate = true; om.instanceMatrix.needsUpdate = true;
-      if (im.instanceColor) im.instanceColor.needsUpdate = true;
-      buildGroup.add(im); outlineGroup.add(om);
+      bm.instanceMatrix.needsUpdate = true; om.instanceMatrix.needsUpdate = true;
+      if (bm.instanceColor) bm.instanceColor.needsUpdate = true;
+      buildGroup.add(bm); outlineGroup.add(om);
+      if (lm) { lm.instanceMatrix.needsUpdate = true; lm.instanceColor.needsUpdate = true; lightGroup.add(lm); }
+    }
+    // Windrad-Rotoren (animiert in frame)
+    if (rotorMesh) { scene.remove(rotorMesh); scene.remove(rotorOut); rotorMesh = rotorOut = null; }
+    if (windList.length) {
+      const rg = rotorGeo();
+      rotorMesh = new THREE.InstancedMesh(rg, new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: GRAD }), windList.length);
+      rotorOut = new THREE.InstancedMesh(outlineGeo(rg, 0.025), new THREE.MeshBasicMaterial({ color: 0x14141f, side: THREE.BackSide }), windList.length);
+      rotorMesh.castShadow = shadows;
+      scene.add(rotorMesh); scene.add(rotorOut);
     }
     // Bäume
     const tg = treeGeos();
     trees.forEach((list, ti) => {
       if (!list.length) return;
       const g = tg[ti];
-      const im = new THREE.InstancedMesh(g.geo, new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: GRAD }), list.length);
-      im.castShadow = shadows;
+      const tm = new THREE.InstancedMesh(g.geo, new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: GRAD }), list.length);
+      tm.castShadow = shadows;
       const om = new THREE.InstancedMesh(g.out, new THREE.MeshBasicMaterial({ color: 0x14301c, side: THREE.BackSide }), list.length);
       list.forEach((i, k) => {
         const x = i % W, y = (i / W) | 0, sc = 0.8 + hash(x * 2, y * 2) * 0.5;
         dummy.position.set(worldX(x) + (hash(x, y) - 0.5) * 0.2, 0, worldZ(y) + (hash(y, x) - 0.5) * 0.2);
         dummy.rotation.set(0, hash(x, y) * 6.28, 0); dummy.scale.set(sc, sc, sc); dummy.updateMatrix();
-        im.setMatrixAt(k, dummy.matrix); om.setMatrixAt(k, dummy.matrix);
+        tm.setMatrixAt(k, dummy.matrix); om.setMatrixAt(k, dummy.matrix);
       });
-      im.instanceMatrix.needsUpdate = true; om.instanceMatrix.needsUpdate = true;
-      treeGroup.add(im); treeGroup.add(om);
+      tm.instanceMatrix.needsUpdate = true; om.instanceMatrix.needsUpdate = true;
+      treeGroup.add(tm); treeGroup.add(om);
     });
   }
 
-  function updateCamera() {
+  // ---- pro Frame: animierte Elemente ----
+  function updateFx(now, dt, night, world) {
+    const t = now / 1000;
+    lightGroup.visible = night;
+    // Windrad-Rotoren drehen
+    if (rotorMesh) {
+      windList.forEach((wd, k) => {
+        dmy.position.set(wd.x, 1.86, wd.z + 0.16); dmy.rotation.set(0, 0, t * 2.4 + wd.ph); dmy.scale.set(1, 1, 1); dmy.updateMatrix();
+        rotorMesh.setMatrixAt(k, dmy.matrix); rotorOut.setMatrixAt(k, dmy.matrix);
+      });
+      rotorMesh.instanceMatrix.needsUpdate = true; rotorOut.instanceMatrix.needsUpdate = true;
+    }
+    // Rauchwolken steigen auf und vergehen
+    let n = 0;
+    for (let e = 0; e < emitters.length; e++) {
+      const em = emitters[e];
+      for (let j = 0; j < 6 && n < MAX_SMOKE; j++) {
+        const ph = (t * 0.35 + j / 6 + e * 0.137) % 1;
+        dmy.position.set(em.x + ph * 0.7, em.y + ph * 1.5, em.z + ph * 0.25);
+        const sc = 0.5 + ph * 1.8; dmy.scale.set(sc, sc, sc); dmy.rotation.set(0, 0, 0); dmy.updateMatrix();
+        smokeMesh.setMatrixAt(n++, dmy.matrix);
+      }
+    }
+    smokeMesh.count = n; smokeMesh.instanceMatrix.needsUpdate = true;
+    smokeMesh.material.color.setHex(night ? 0x6a6a78 : 0xd8d8de);
+    // Fahrzeuge
+    const veh = (world && world.vehicles) || [];
+    let nc = 0, nb = 0, nt = 0;
+    for (const v of veh) {
+      const mesh = v.kind === 'bus' ? busMesh : v.kind === 'train' ? trainMesh : carMesh;
+      const idx = v.kind === 'bus' ? nb : v.kind === 'train' ? nt : nc;
+      if (idx >= (v.kind === 'bus' ? MAX_BUS : v.kind === 'train' ? MAX_TRAIN : MAX_CARS)) continue;
+      dmy.position.set(worldX(v.x), 0, worldZ(v.y));
+      dmy.rotation.set(0, (v.dir === 1 || v.dir === 3) ? 0 : Math.PI / 2, 0); dmy.scale.set(1, 1, 1); dmy.updateMatrix();
+      mesh.setMatrixAt(idx, dmy.matrix); _c.set(v.color || '#c9484f'); mesh.setColorAt(idx, _c);
+      if (v.kind === 'bus') nb++; else if (v.kind === 'train') nt++; else nc++;
+    }
+    for (const [m, c] of [[carMesh, nc], [busMesh, nb], [trainMesh, nt]]) {
+      m.count = c; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true;
+    }
+    // Brände (flackernde Flammen) und Hochwasser
+    let nf = 0;
+    for (const i of sim.burnList || []) {
+      if (nf >= MAX_FLAME || !sim.burn[i]) continue;
+      const x = i % W, y = (i / W) | 0, fl = 0.75 + Math.sin(t * 14 + i) * 0.25;
+      dmy.position.set(worldX(x), 0.1, worldZ(y)); dmy.rotation.set(0, t * 3 + i, 0); dmy.scale.set(fl, 0.8 + fl * 0.6, fl); dmy.updateMatrix();
+      flameMesh.setMatrixAt(nf++, dmy.matrix);
+    }
+    flameMesh.count = nf; flameMesh.instanceMatrix.needsUpdate = true;
+    let nw = 0;
+    for (const i of sim.floodList || []) {
+      if (nw >= MAX_FLOOD || !sim.floodT[i]) continue;
+      dmy.position.set(worldX(i % W), 0.05 + Math.sin(t * 2 + i) * 0.02, worldZ((i / W) | 0)); dmy.rotation.set(0, 0, 0); dmy.scale.set(1, 1, 1); dmy.updateMatrix();
+      floodMesh.setMatrixAt(nw++, dmy.matrix);
+    }
+    floodMesh.count = nw; floodMesh.instanceMatrix.needsUpdate = true;
+    // Tornado & UFO aus den Sim-Akteuren
+    tornadoMesh.visible = false; ufoMesh.visible = false;
+    for (const a of (world && world.actors) || []) {
+      if (a.type === 'tornado') { tornadoMesh.visible = true; tornadoMesh.position.set(worldX(a.x), 0, worldZ(a.y)); tornadoMesh.rotation.y = t * 6; }
+      else if (a.type === 'ufo') { ufoMesh.visible = true; ufoMesh.position.set(worldX(a.x), 5 + Math.sin(t * 2) * 0.4, worldZ(a.y)); ufoMesh.rotation.y = t * 2; }
+    }
+    // Wetter: Schnee rieselt, Regen prasselt (Partikel folgen der Kamera)
+    const wx = world && world.weather;
+    weatherPts.visible = !!wx;
+    if (wx) {
+      const snow = wx === 'snow', sp = snow ? 2.2 : 14;
+      weatherPts.material.color.setHex(snow ? 0xffffff : 0x9cc4ff);
+      weatherPts.material.size = snow ? 0.2 : 0.09;
+      for (let i = 0; i < WEATHER_N; i++) {
+        let y = weatherPos[i * 3 + 1] - sp * dt;
+        if (y < 0) y += 26;
+        weatherPos[i * 3 + 1] = y;
+        if (snow) weatherPos[i * 3] += Math.sin(t + i) * 0.01;
+      }
+      weatherPts.position.set(cam.tx, 0, cam.ty);
+      weatherPts.geometry.attributes.position.needsUpdate = true;
+    }
+    // Feuerwerk während des Stadtfests (bevorzugt nachts sichtbar)
+    fireworkPts.visible = !!(world && world.festival);
+    if (fireworkPts.visible) {
+      for (let b = 0; b < FW_BURSTS; b++) {
+        const B = fwBursts[b], age = t - B.t0;
+        if (age > 1.8) {
+          B.t0 = t + b * 0.37; B.x = cam.tx + (Math.random() - 0.5) * 24; B.z = cam.ty + (Math.random() - 0.5) * 24; B.y = 7 + Math.random() * 4;
+          B.c.setHSL(Math.random(), 0.9, 0.6);
+        }
+        const a2 = Math.max(0, t - B.t0);
+        for (let k = 0; k < FW_PER; k++) {
+          const o = (b * FW_PER + k) * 3, th = k / FW_PER * Math.PI * 2, phi = (k % 6) / 6 * Math.PI;
+          const r = a2 * 3.2;
+          fwPos[o] = B.x + Math.cos(th) * Math.sin(phi) * r;
+          fwPos[o + 1] = B.y + Math.cos(phi) * r - a2 * a2 * 1.4;
+          fwPos[o + 2] = B.z + Math.sin(th) * Math.sin(phi) * r;
+          const fade = a2 < 0 ? 0 : Math.max(0, 1 - a2 / 1.8);
+          fwCol[o] = B.c.r * fade; fwCol[o + 1] = B.c.g * fade; fwCol[o + 2] = B.c.b * fade;
+        }
+      }
+      fireworkPts.geometry.attributes.position.needsUpdate = true;
+      fireworkPts.geometry.attributes.color.needsUpdate = true;
+    }
+  }
+
+  // ---- Kamera: Kinomodus und weiche Fahrten ----
+  let cinematic = false, goal = null, lastNow = 0;
+  function updateCamera(dt) {
+    if (cinematic) { cam.az += dt * 0.12; cam.pol = 0.9 + Math.sin(lastNow / 9000) * 0.12; }
+    if (goal) {
+      const k = Math.min(1, dt * 3.5);
+      cam.tx += (goal.tx - cam.tx) * k; cam.ty += (goal.ty - cam.ty) * k;
+      if (goal.dist) cam.dist += (goal.dist - cam.dist) * k;
+      if (Math.abs(goal.tx - cam.tx) < 0.02 && Math.abs(goal.ty - cam.ty) < 0.02 && (!goal.dist || Math.abs(goal.dist - cam.dist) < 0.05)) goal = null;
+    }
     const sinPol = Math.sin(cam.pol);
     camera.position.set(cam.tx + cam.dist * sinPol * Math.sin(cam.az), cam.dist * Math.cos(cam.pol), cam.ty + cam.dist * sinPol * Math.cos(cam.az));
     camera.lookAt(cam.tx, 0, cam.ty);
@@ -455,16 +658,18 @@
     }
   }
 
-  function frame(now, night) {
+  function frame(now, night, world) {
     if (!inited || !sim) return;
+    const dt = Math.min(0.1, lastNow ? (now - lastNow) / 1000 : 0.016); lastNow = now;
     waterPhase = now / 600;
     if (dirty) { repaintGround(night); rebuildBuildings(); dirty = false; }
     scene.background.setHex(night ? 0x14213f : 0x8fcfff);
     if (scene.fog) scene.fog.color.setHex(night ? 0x14213f : 0x8fcfff);
-    sun.intensity = night ? 0.45 : 1.6; sun.color.setHex(night ? 0x8fa8ff : 0xfff2d0);
-    hemi.intensity = night ? 0.3 : 0.7; ambient.intensity = night ? 0.25 : 0.3;
+    sun.intensity = night ? 0.45 : 1.1; sun.color.setHex(night ? 0x8fa8ff : 0xfff2d0);
+    hemi.intensity = night ? 0.3 : 0.5; ambient.intensity = night ? 0.25 : 0.18;
     waterMesh.material.opacity = 0.22 + Math.sin(now / 900) * 0.06;
-    updateCamera();
+    updateFx(now, dt, night, world);
+    updateCamera(dt);
     renderer.render(scene, camera);
   }
 
@@ -491,18 +696,27 @@
 
   function orbit(dx, dy) { cam.az -= dx * 0.008; cam.pol = Math.max(0.2, Math.min(1.45, cam.pol - dy * 0.006)); }
   function panCam(dx, dy) {
+    goal = null;
     const f = cam.dist * 0.0016;
     cam.tx += (-dx * Math.cos(cam.az) + dy * Math.sin(cam.az)) * f;
     cam.ty += (dx * Math.sin(cam.az) + dy * Math.cos(cam.az)) * f;
     cam.tx = Math.max(-W / 2, Math.min(W / 2, cam.tx)); cam.ty = Math.max(-H / 2, Math.min(H / 2, cam.ty));
   }
-  function zoom(delta) { cam.dist = Math.max(8, Math.min(Math.max(W, H) * 2.4, cam.dist + delta)); }
-  function centerOn(x, y) { cam.tx = worldX(x); cam.ty = worldZ(y); }
+  function zoom(delta) { cam.dist = Math.max(8, Math.min(Math.max(W, H) * 2.4, cam.dist + delta)); if (goal) goal.dist = 0; }
+  function centerOn(x, y) { goal = { tx: worldX(x), ty: worldZ(y), dist: 0 }; }
+  function focus(x, y) { goal = { tx: worldX(x), ty: worldZ(y), dist: Math.max(12, Math.min(cam.dist, 18)) }; }
+  function resetCam() { cam.az = 0.8; cam.pol = 0.92; goal = { tx: 0, ty: 0, dist: Math.max(26, Math.min(W, H) * 1.05) }; }
+  function setCinematic(on) { cinematic = !!on; }
   function markDirty() { dirty = true; }
   function screenshot() { return renderer ? renderer.domElement.toDataURL('image/png') : null; }
 
   window.Render3D = {
-    init, setSim, frame, resize, pick, setHover, orbit, panCam, zoom, centerOn,
+    init, setSim, frame, resize, pick, setHover, orbit, panCam, zoom, centerOn, focus, resetCam, setCinematic,
     markDirty, screenshot, get ready() { return inited; }, get cam() { return cam; },
+    get stats() {
+      return { smoke: smokeMesh ? smokeMesh.count : 0, cars: carMesh ? carMesh.count + busMesh.count + trainMesh.count : 0,
+        rotors: windList.length, flames: flameMesh ? flameMesh.count : 0, weather: !!(weatherPts && weatherPts.visible),
+        lights: lightGroup ? lightGroup.children.length : 0, fireworks: !!(fireworkPts && fireworkPts.visible) };
+    },
   };
 })();

@@ -1109,6 +1109,26 @@ const Sprites = (() => {
     '................',
   ]);
 
+  // Stadtbibliothek: Säulenbau mit Giebel und Buch-Schild
+  const LIBRARY = art([
+    '................',
+    '.......KK.......',
+    '.....KKwwKK.....',
+    '...KKwwwwwwKK...',
+    '.KKKKKKKKKKKKKK.',
+    '.KwwwwwwwwwwwwK.',
+    '.KwKKwwBBwwKKwK.',
+    '.KwwwwwBBwwwwwK.',
+    '.KwWKWwWKWwWKwK.',
+    '.KwWKWwWKWwWKwK.',
+    '.KwWKWwWKWwWKwK.',
+    '.KwWKWwKNNKwKwK.',
+    '.KwWKWwKNNKWKwK.',
+    '.KKKKKKKKKKKKKK.',
+    '.SSSSSSSSSSSSSS.',
+    '................',
+  ]);
+
   const HOSPITAL = art([
     '................',
     '.KKKKKKKKKKKKKK.',
@@ -1634,6 +1654,7 @@ const Sprites = (() => {
     store.plane = planeSprite();
     store.treatment = treatmentSprite();
     store.university = universitySprite();
+    store.library = LIBRARY;
     store.fire = [fireTile(0), fireTile(1), fireTile(2)];
     store.smoke = [smokeTile(0), smokeTile(1)];
     store.tornado = [TORNADO0, TORNADO1];

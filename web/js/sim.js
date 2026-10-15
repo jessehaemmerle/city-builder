@@ -18,7 +18,7 @@ const S_NONE = 0, S_ROAD = 1, S_WIRE = 2, S_RZONE = 3, S_CZONE = 4, S_IZONE = 5,
   S_SOLAR = 21, S_BUSSTOP = 22, S_TRAINSTATION = 23, S_SUBWAY = 24, S_PORT = 25, S_PIPE = 26,
   S_HOTEL = 27, S_AMUSE = 28, S_HIGHWAY = 29, S_LANDFILL = 30, S_INCINER = 31,
   S_RECYCLE = 32, S_AIRPORT = 33, S_NUCLEAR = 34, S_TREATMENT = 35, S_UNIVERSITY = 36,
-  S_RUNWAY = 37, S_PIER = 38;
+  S_RUNWAY = 37, S_PIER = 38, S_LIBRARY = 39;
 
 // Katalog. name = i18n-Key. Flags: bld, flam, drain, power, waterSupply, needsWaterAdj
 const DEFS = {
@@ -69,6 +69,8 @@ const DEFS = {
   [S_RUNWAY]:       { name: 'b.runway',       cost: 900,  upkeep: 12, size: 1, ext: 'airport' },
   // Pier/Anleger: Erweiterungskachel für den Schiffshafen (auf Wasser, an Hafen/Pier anschließen)
   [S_PIER]:         { name: 'b.pier',         cost: 700,  upkeep: 10, size: 1, ext: 'port' },
+  // Stadtbibliothek: hebt das Bildungsniveau, kleine Attraktion
+  [S_LIBRARY]:      { name: 'b.library',      cost: 900,  upkeep: 15, size: 1, bld: 1, flam: 1, drain: 1, minPop: 300 },
 };
 
 const LINE_COLORS = ['#e5484f', '#4f8fdc', '#41c46a', '#f0d95c', '#b06ce0', '#e08438', '#33c3c1', '#e39ac2'];
@@ -204,7 +206,11 @@ class Sim {
     this.crime = new Uint8Array(n);
     this.garbageProduced = 0; this.garbageCap = 0; this.garbageOverflow = 0;
     this.avgCrime = 0; this.avgLandv = 0; this.eduLevel = 0;
-    this.policies = { smokeDetect: false, recycle: false, proBiz: false, conserve: false, culture: false };
+    this.policies = { smokeDetect: false, recycle: false, proBiz: false, conserve: false, culture: false,
+      tempo30: false, solarSub: false };
+    // Stadtfest (Restmonate), Zustimmung, Stadtrang, Jahresbilanz-Startwerte
+    this.festival = 0; this.approval = 50; this.rank = 0;
+    this.yearStart = { pop: 0, money: BAL.START_MONEY };
     // Ressort-Finanzierung (0.5–1.5, skaliert Abdeckung & Unterhalt)
     this.funding = { police: 1, fire: 1, school: 1, health: 1, park: 1 };
     // Bezirke: pro Kachel eine Bezirks-ID (0 = keiner)
@@ -223,7 +229,73 @@ class Sim {
   isBld(s) { return !!(DEFS[s] && DEFS[s].bld); }
   isNet(s) { return s === S_ROAD || s === S_RAIL || s === S_HIGHWAY; }
   isPlant(s) { return s === S_WIND || s === S_COAL || s === S_SOLAR || s === S_NUCLEAR; }
-  solarPower() { return this.year >= BAL.ERA.SOLAR_UP_YEAR ? BAL.ERA.SOLAR_POWER2 : BAL.ERA.SOLAR_POWER; }
+  solarPower() {
+    const base = this.year >= BAL.ERA.SOLAR_UP_YEAR ? BAL.ERA.SOLAR_POWER2 : BAL.ERA.SOLAR_POWER;
+    return this.policies && this.policies.solarSub ? Math.round(base * BAL.POLICY.solarSub.powerF) : base;
+  }
+
+  // Deterministischer Würfel je Monat + Ereignis-Tag (unabhängig von this.rand,
+  // damit bestehende Zufallsfolgen unverändert bleiben)
+  evRoll(tag) {
+    let h = (this.seed ^ Math.imul(this.monthsTotal + 7, 2654435761) ^ Math.imul(tag + 1, 40503)) >>> 0;
+    h = Math.imul(h ^ (h >>> 15), 2246822507) >>> 0;
+    h = Math.imul(h ^ (h >>> 13), 3266489909) >>> 0;
+    return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+  }
+
+  // Stadtrang nach Einwohnern (Index in BAL.RANKS)
+  rankFor(pop) {
+    let r = 0;
+    BAL.RANKS.forEach(([lim], k) => { if (pop >= lim) r = k; });
+    return r;
+  }
+
+  // Aufforsten: Baum auf freiem Gras pflanzen
+  plantTree(x, y) {
+    if (!this.inMap(x, y)) return { ok: false, reason: 'err.outside' };
+    const i = this.idx(x, y);
+    if (this.terr[i] === T_WATER) return { ok: false, reason: 'err.water' };
+    if (this.st[i] !== S_NONE) return { ok: false, reason: 'err.occupied' };
+    if (this.terr[i] === T_TREE) return { ok: false, reason: 'err.exists' };
+    const cost = BAL.TREE.COST;
+    if (this.money < cost) return { ok: false, reason: 'err.money' };
+    this.terr[i] = T_TREE; this.money -= cost; this.markChanged(i);
+    return { ok: true, cost };
+  }
+
+  // Stadtfest: kostet einmalig, hebt für einige Monate Laune & Tourismus
+  holdFestival() {
+    if (this.festival > 0) return { ok: false, reason: 'err.festivalActive' };
+    const F = BAL.FESTIVAL;
+    const cost = Math.round(F.COST + this.pop * F.COST_POP);
+    if (this.money < cost) return { ok: false, reason: 'err.money' };
+    this.money -= cost; this.festival = F.MONTHS;
+    this.events.push({ type: 'milestone', key: 'ev.festival', params: { cost } });
+    return { ok: true, cost };
+  }
+
+  // Erdbeben: zerstört deterministisch Gebäude in einem Radius, entfacht Brände
+  spawnQuake() {
+    const { w, h } = this, D = BAL.DISASTER;
+    const cands = [];
+    for (let i = 0; i < w * h; i++) if (this.st[i] !== S_NONE && this.isBld(this.st[i])) cands.push(i);
+    if (!cands.length) return 0;
+    const c = cands[Math.floor(this.evRoll(31) * cands.length)];
+    const cx = c % w, cy = (c / w) | 0, R = D.QUAKE_RADIUS;
+    let hit = 0, k = 0;
+    for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++) {
+      if (dx * dx + dy * dy > R * R) continue;
+      const nx = cx + dx, ny = cy + dy;
+      if (!this.inMap(nx, ny)) continue;
+      const i = this.idx(nx, ny), s = this.st[i];
+      if (s === S_NONE || s === S_RUBBLE) continue;
+      const roll = this.evRoll(100 + (k++));
+      if (this.isBld(s) && roll < D.QUAKE_DESTROY) { this.destroyTile(i); hit++; }
+      else if (DEFS[s] && DEFS[s].flam && roll < D.QUAKE_DESTROY + D.QUAKE_FIRE) this.setBurn(i, D.FIRE_SPREAD_BURN);
+    }
+    this.events.push({ type: 'bad', key: 'ev.quake', params: { hit }, x: cx, y: cy });
+    return hit;
+  }
 
   markChanged(i) {
     if (!this.allChanged) {
@@ -1026,6 +1098,7 @@ class Sim {
     // Bildung macht Industrie sauberer (ab Internet-Zeitalter stärker)
     const eduCut = this.year >= BAL.EDU.ERA_YEAR ? BAL.EDU.POLL_CUT_ERA : BAL.EDU.POLL_CUT;
     const izoneCleanF = 1 - this.eduLevel * eduCut;
+    const tempoF = this.policies.tempo30 ? BAL.POLICY.tempo30.pollF : 1; // Tempo 30: weniger Abgase/Lärm
     for (let i = 0; i < w * h; i++) {
       const s = this.st[i];
       if (s === S_IZONE) src[i] = B.IZONE_PER_LVL * this.lvl[i] * izoneCleanF;
@@ -1033,7 +1106,7 @@ class Sim {
       else if (s === S_LANDFILL) src[i] = B.LANDFILL;
       else if (s === S_INCINER) src[i] = B.INCINER;
       else if (s === S_AIRPORT) src[i] = B.AIRPORT;
-      else if (s === S_ROAD || s === S_HIGHWAY) src[i] = (B.ROAD_BASE + this.traffic[i] * B.ROAD_TRAFFIC_F) * eCarF;
+      else if (s === S_ROAD || s === S_HIGHWAY) src[i] = (B.ROAD_BASE + this.traffic[i] * B.ROAD_TRAFFIC_F) * eCarF * tempoF;
       if (s === S_PARK || this.terr[i] === T_TREE) src[i] = B.GREEN;
     }
     let cur = src;
@@ -1067,6 +1140,12 @@ class Sim {
       v -= this.poll[i] * B.POLL_F;
       v -= this.jamNear[i] * B.JAM_F;
       v -= this.crime[i] * B.CRIME_F;
+      // Stadtbäume in direkter Nachbarschaft werten das Viertel auf
+      let trees = 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        if ((dx || dy) && this.inMap(x + dx, y + dy) && this.terr[this.idx(x + dx, y + dy)] === T_TREE) trees++;
+      }
+      v += Math.min(B.TREE_MAX, trees * B.TREE_F);
       v = Math.max(0, Math.min(100, Math.round(v)));
       // Luxus-Schwelle überschritten? → Sprite ändert sich, Chunk neu zeichnen
       if (this.lvl[i] === 4 && (this.st[i] === S_RZONE || this.st[i] === S_CZONE) &&
@@ -1093,7 +1172,7 @@ class Sim {
   computeStats() {
     const B = BAL.HAPPY, D = BAL.DEMAND, AT = BAL.TOURISM.ATTRACT, GB = BAL.GARBAGE;
     let pop = 0, cJobs = 0, iJobs = 0, casinos = 0, townhall = false;
-    let hotelBeds = 0, attraction = 0, unis = 0;
+    let hotelBeds = 0, attraction = 0, unis = 0, libs = 0;
     let garbage = 0, garbCap = 0, recycleCut = 0;   // Müll: Aufkommen vs. Kapazität
     let schoolSum = 0, schoolCnt = 0;                // für das Bildungsniveau
     const n = this.w * this.h;
@@ -1111,19 +1190,21 @@ class Sim {
       else if (s === S_AMUSE && this.powered[i] && this.isAnchor(i)) attraction += AT.amuse;
       else if (s === S_AIRPORT && this.powered[i] && this.isAnchor(i)) attraction += AT.airport;
       else if (s === S_UNIVERSITY && this.powered[i] && this.isAnchor(i)) { unis++; attraction += AT.university; }
+      else if (s === S_LIBRARY && this.powered[i]) { libs++; attraction += AT.library; }
       else if (s === S_LANDFILL && this.isAnchor(i)) garbCap += GB.LANDFILL_CAP;
       else if (s === S_INCINER && this.powered[i]) garbCap += GB.INCINER_CAP;
       else if (s === S_RECYCLE && this.powered[i]) recycleCut += GB.RECYCLE_CUT;
     }
     // Landebahnen an einem versorgten Flughafen steigern die Attraktivität.
     attraction += this.runwayTotal * AT.airportRunway;
+    if (this.festival > 0) attraction += BAL.FESTIVAL.ATTRACT; // Stadtfest lockt Besucher
     this.pop = pop; this.cJobs = cJobs;
     this.casinos = casinos;
     this.attraction = attraction; this.touristCap = hotelBeds;
 
     // Bildungsniveau: geglätteter Ø der Schul-Abdeckung + Universitäten (Bonus)
     let targetEdu = schoolCnt > 0 ? (schoolSum / schoolCnt) / 100 : 0;
-    targetEdu = Math.min(1, targetEdu + unis * BAL.EDU.UNI_BOOST);
+    targetEdu = Math.min(1, targetEdu + unis * BAL.EDU.UNI_BOOST + Math.min(BAL.EDU.LIB_MAX, libs * BAL.EDU.LIB_BOOST));
     this.eduLevel = Math.max(0, Math.min(1, this.eduLevel + (targetEdu - this.eduLevel) * BAL.EDU.SMOOTH));
     // Bildung macht Industrie produktiver → mehr Jobs aus demselben Level
     iJobs = Math.round(iJobs * (1 + this.eduLevel * BAL.EDU.JOB_BONUS));
@@ -1143,7 +1224,8 @@ class Sim {
     const ec = this.econ, EF = BAL.ECONOMY;
     const bizF = this.policies.proBiz ? BAL.POLICY.proBiz.demandF : 1; // Wirtschaftsförderung
     this.demandR = Math.max(-1, Math.min(1, (this.jobs * D.R_JOBS_F + D.R_BASE - pop) / D.R_DIV * (1 + ec * EF.DEMAND_F_R))) * taxF;
-    this.demandC = Math.max(-1, Math.min(1, (workers * D.C_WORK_F - cJobs) / D.C_DIV * (1 + ec * EF.DEMAND_F_CI))) * taxF * bizF;
+    const tempoC = this.policies.tempo30 ? BAL.POLICY.tempo30.demandCF : 1; // Tempo 30 bremst Lieferverkehr leicht
+    this.demandC = Math.max(-1, Math.min(1, (workers * D.C_WORK_F - cJobs) / D.C_DIV * (1 + ec * EF.DEMAND_F_CI))) * taxF * bizF * tempoC;
     this.demandI = Math.max(-1, Math.min(1, (workers * D.I_WORK_F + D.I_BASE - iJobs) / D.I_DIV * (1 + ec * EF.DEMAND_F_CI))) * taxF * bizF;
 
     let happy = B.BASE;
@@ -1153,6 +1235,7 @@ class Sim {
     if (casinos > 0) happy -= B.CASINO;
     if (this.policies.conserve) happy -= BAL.POLICY.conserve.happy; // Sparzwang nervt
     if (this.policies.culture) happy += BAL.POLICY.culture.happy;   // Kulturprogramm
+    if (this.festival > 0) happy += BAL.FESTIVAL.HAPPY;             // Stadtfest
     this.avgCrime = 0; this.avgLandv = 0;
     if (pop > 0) {
       let covP = 0, covS = 0, covH = 0, covG = 0, covW = 0, pol = 0, jam = 0, fire = 0, crime = 0, landvSum = 0, cnt = 0;
@@ -1191,6 +1274,12 @@ class Sim {
       this.healthIndex = Math.max(0, Math.min(100, Math.round(hi)));
     } else { this.healthIndex = BAL.HEALTH.BASE; }
     this.happiness = Math.max(0, Math.min(100, Math.round(happy)));
+    // Zustimmung zum Bürgermeister: Laune, Steuern, Sicherheit, Finanzlage
+    const EL = BAL.ELECTION;
+    let ap = this.happiness * EL.HAPPY_W + (D.TAX_NEUTRAL - this.taxRate) * EL.TAX_W
+      - this.avgCrime * EL.CRIME_W + (this.money < 0 ? -EL.DEBT_PEN : 0) + EL.BASE;
+    this.approval = Math.max(0, Math.min(100, Math.round(ap)));
+    this.rank = this.rankFor(pop);
 
     // ---------- Tourismus ----------
     // Nachfrage = Attraktionen × Zufriedenheit × Konjunktur × Außenanbindung.
@@ -1464,7 +1553,8 @@ class Sim {
   }
 
   // ---------- Monatsabschluss ----------
-  monthlyBudget() {
+  // Reine Budgetrechnung ohne Nebenwirkungen (für Abrechnung UND Prognose)
+  budgetCalc() {
     const n = this.w * this.h;
     let upkeep = 0;
     const nukes = [];
@@ -1508,11 +1598,23 @@ class Sim {
     if (this.policies.recycle) policyCost += this.pop * PB.recycle.costPop;
     if (this.policies.proBiz) policyCost += PB.proBiz.costFlat + this.jobs * PB.proBiz.costJobs;
     if (this.policies.culture) policyCost += this.pop * PB.culture.costPop;
+    if (this.policies.tempo30) policyCost += this.pop * PB.tempo30.costPop;
+    if (this.policies.solarSub) policyCost += PB.solarSub.costFlat;
     policyCost = Math.round(policyCost);
     const net = income + casinoIncome + fares + exportIncome + tourismIncome - upkeep - interest - transit - policyCost;
-    this.money += net;
-    this.lastBudget = { income, casino: casinoIncome, fares, export: exportIncome, tourism: tourismIncome, upkeep, interest, transit, policy: policyCost, net };
+    return { income, casino: casinoIncome, fares, export: exportIncome, tourism: tourismIncome, upkeep, interest, transit, policy: policyCost, net, nukes };
+  }
+
+  // Prognose des nächsten Monatsergebnisses (ohne Zustand zu verändern)
+  forecast() { return this.budgetCalc().net; }
+
+  monthlyBudget() {
+    const b = this.budgetCalc(), nukes = b.nukes, ec = this.econ;
+    this.money += b.net;
+    this.lastBudget = { income: b.income, casino: b.casino, fares: b.fares, export: b.export, tourism: b.tourism,
+      upkeep: b.upkeep, interest: b.interest, transit: b.transit, policy: b.policy, net: b.net };
     // Konjunktur-Phasenwechsel melden (deterministisch aus dem Monat)
+    this.monthlyExtras();
     const E2 = BAL.ECONOMY;
     const prevEc = this.econAt(this.monthsTotal - 1);
     if (ec >= E2.PHASE_HI && prevEc < E2.PHASE_HI) this.events.push({ type: 'milestone', key: 'ev.boom' });
@@ -1577,6 +1679,52 @@ class Sim {
     }
     this.checkAdvisors();
     this.checkScenario();
+  }
+
+  // Monatliche Zusatz-Ereignisse: Stadtfest, Fördermittel, Erdbeben,
+  // Wahlen, Stadtrang, Jahresrückblick (alle deterministisch über evRoll)
+  monthlyExtras() {
+    if (this.festival > 0) {
+      this.festival--;
+      if (this.festival === 0) this.events.push({ type: 'info', key: 'ev.festivalEnd' });
+    }
+    // Fördermittel vom Land
+    const G = BAL.GRANT;
+    if (this.pop >= G.MIN_POP && this.evRoll(1) < G.P) {
+      const amount = Math.round(G.BASE + this.pop * G.PER_POP);
+      this.money += amount;
+      this.events.push({ type: 'milestone', key: 'ev.grant', params: { amount } });
+    }
+    // Erdbeben
+    const D = BAL.DISASTER;
+    if (this.disasters && this.pop > D.MIN_POP && this.evRoll(2) < D.QUAKE_P) this.spawnQuake();
+    // Stadtrang-Aufstieg
+    const r = this.rankFor(this.pop);
+    if (r > 0 && !this.milestones['rank' + r]) {
+      for (let k = 1; k <= r; k++) this.milestones['rank' + k] = true;
+      this.events.push({ type: 'milestone', key: 'ev.rankUp', params: { rank: BAL.RANKS[r][1] } });
+    }
+    if (this.month === 0) {
+      // Jahresrückblick über das abgelaufene Jahr
+      const ys = this.yearStart || { pop: 0, money: 0 };
+      this.events.push({ type: 'info', key: 'ev.yearReview', params: {
+        year: this.year - 1, pop: this.pop, dPop: this.pop - ys.pop, dMoney: Math.round(this.money - ys.money),
+      } });
+      this.yearStart = { pop: this.pop, money: Math.round(this.money) };
+      // Wahl alle n Jahre
+      const EL = BAL.ELECTION;
+      const yrs = this.year - this.startYear;
+      if (yrs > 0 && yrs % EL.EVERY === 0 && this.pop >= EL.MIN_POP && !this.milestones['elect' + this.year]) {
+        this.milestones['elect' + this.year] = true;
+        if (this.approval >= EL.PASS) {
+          this.money += EL.BONUS;
+          this.events.push({ type: 'milestone', key: 'ev.electionWon', params: { pct: this.approval, bonus: EL.BONUS } });
+        } else {
+          this.taxRate = Math.min(this.taxRate, BAL.DEMAND.TAX_NEUTRAL); // Wahlversprechen: Steuern runter
+          this.events.push({ type: 'bad', key: 'ev.electionLost', params: { pct: this.approval } });
+        }
+      }
+    }
   }
 
   // ---------- Ein Simulationstag ----------
@@ -1649,6 +1797,7 @@ class Sim {
       scenario: this.scenario,
       policies: this.policies, eduLevel: eduSnapshot,
       funding: this.funding, districts: this.districts, achievements: this.achievements,
+      festival: this.festival, yearStart: this.yearStart,
     });
   }
 
@@ -1692,6 +1841,8 @@ class Sim {
     if (d.funding) for (const k in s.funding) if (typeof d.funding[k] === 'number') s.funding[k] = d.funding[k];
     s.districts = d.districts || [];
     s.achievements = d.achievements || {};
+    s.festival = d.festival || 0;
+    if (d.yearStart) s.yearStart = d.yearStart;
     if (d.v >= 4 && d.rle.dist) rleDecode(d.rle.dist, s.district);
     s.computeWaterNear();
     // Aktive Brand-/Flutlisten aus den Arrays rekonstruieren
@@ -1741,7 +1892,7 @@ if (typeof module !== 'undefined' && module.exports) {
     S_RAIL, S_WTOWER, S_PUMP, S_TOWNHALL, S_MONUMENT, S_CASINO, S_SOLAR,
     S_BUSSTOP, S_TRAINSTATION, S_SUBWAY, S_PORT, S_PIPE, S_HOTEL, S_AMUSE,
     S_HIGHWAY, S_LANDFILL, S_INCINER, S_RECYCLE, S_AIRPORT, S_NUCLEAR,
-    S_TREATMENT, S_UNIVERSITY, S_RUNWAY, S_PIER,
+    S_TREATMENT, S_UNIVERSITY, S_RUNWAY, S_PIER, S_LIBRARY,
   };
 }
 // Browser: Erfolge-Liste für die UI verfügbar machen

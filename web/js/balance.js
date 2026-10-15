@@ -71,6 +71,7 @@
       PARK_F: 0.28, POLICE_F: 0.06,
       POLL_F: 0.5, JAM_F: 0.10,
       CRIME_F: 0.5,                  // Kriminalität drückt den Landwert
+      TREE_F: 1.5, TREE_MAX: 8,      // Stadtbäume ringsum werten auf
       LUX_MIN: 62,                   // ab hier Luxus-Sprites (Stufe 4)
     },
 
@@ -109,6 +110,7 @@
       POLL_CUT_ERA: 0.85,            // … verstärkt ab dem Internet-Zeitalter
       ERA_YEAR: 2000,
       JOB_BONUS: 0.35,               // max. Zusatz-Jobs der Industrie
+      LIB_BOOST: 0.05, LIB_MAX: 0.2, // Bibliotheken (gedeckelt)
       UNI_BOOST: 0.3,                // Bildungs-Ziel-Bonus je Universität (gedeckelt)
     },
 
@@ -133,7 +135,28 @@
       proBiz:      { demandF: 1.15, costFlat: 40, costJobs: 0.05 },
       conserve:    { needF: 0.85, happy: 2, costPop: 0 },
       culture:     { happy: 4, costPop: 0.06 },
+      tempo30:     { pollF: 0.75, demandCF: 0.97, costPop: 0.02 }, // weniger Straßen-Smog
+      solarSub:    { powerF: 1.3, costFlat: 60 },                  // +30 % Solarertrag
     },
+
+    // Aufforsten-Werkzeug & Stadtbäume
+    TREE: { COST: 5 },
+
+    // Stadtränge (Einwohner-Schwelle, i18n-Key)
+    RANKS: [
+      [0, 'rank.0'], [100, 'rank.1'], [500, 'rank.2'], [1500, 'rank.3'],
+      [4000, 'rank.4'], [10000, 'rank.5'], [25000, 'rank.6'],
+    ],
+
+    // Bürgermeister-Wahl alle EVERY Jahre: Zustimmung >= PASS → Bonus
+    ELECTION: { EVERY: 4, PASS: 50, BONUS: 5000, MIN_POP: 100,
+      BASE: 30, HAPPY_W: 0.6, TAX_W: 2, CRIME_W: 0.25, DEBT_PEN: 15 },
+
+    // Stadtfest
+    FESTIVAL: { COST: 1500, COST_POP: 0.5, MONTHS: 3, HAPPY: 8, ATTRACT: 60 },
+
+    // Fördermittel vom Land (Zufallsereignis je Monat)
+    GRANT: { P: 0.04, BASE: 1000, PER_POP: 0.4, MIN_POP: 200 },
 
     DISASTER: {
       MIN_POP: 150,
@@ -141,7 +164,8 @@
       UFO_P: 0.012, UFO_FROM_YEAR: 3,   // Jahre nach Spielstart
       FIRE_BURN: 14, FIRE_SPREAD_BURN: 12,
       FIRE_COV_SAFE: 40, FIRE_COV_STOP: 55, FIRE_COV_FAST: 30,
-      NUKE_MELT_P: 0.006,               // Kernschmelze je Reaktor und Monat
+      NUKE_MELT_P: 0.006,
+      QUAKE_P: 0.006, QUAKE_RADIUS: 4, QUAKE_DESTROY: 0.3, QUAKE_FIRE: 0.15, // Erdbeben               // Kernschmelze je Reaktor und Monat
       NUKE_BURN: 20, NUKE_RADIUS: 4,    // Wucht/Radius der Kernschmelze
     },
 
@@ -179,7 +203,7 @@
       EXT_FULL: 1.0,         // mit Außenanbindung: voller Zustrom
       EXT_LOCAL: 0.3,        // ohne Anbindung: nur lokale Ausflügler
       ATTRACT: {             // Anziehungskraft je Attraktion
-        park: 4, stadium: 45, monument: 35, casino: 20, amuse: 70, airport: 40, university: 30,
+        library: 8, park: 4, stadium: 45, monument: 35, casino: 20, amuse: 70, airport: 40, university: 30,
         airportRunway: 6,      // je zusätzliche Landebahn am versorgten Flughafen
       },
     },

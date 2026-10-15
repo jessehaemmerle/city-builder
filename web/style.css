@@ -475,3 +475,11 @@ select.btn { padding: 3px 4px; }
   .stat { padding: 4px 8px; }
   #advisorBox { bottom: 130px; }
 }
+
+/* Tastenkürzel-Hilfe */
+.helpTable { border-collapse: collapse; font-size: 12px; margin: 4px 0 10px; }
+.helpTable td { padding: 3px 8px; border-bottom: 1px dashed #454a6e; vertical-align: top; }
+.helpTable td:first-child { white-space: nowrap; color: var(--accent); }
+kbd { display: inline-block; min-width: 14px; padding: 1px 4px; margin: 0 1px; border: 1px solid #6a6f9e;
+  border-bottom-width: 2px; border-radius: 3px; background: #23264a; font-family: inherit; font-size: 11px; text-align: center; }
+#forecastRow b.plus { color: #7fe0a0; } #forecastRow b.minus { color: #ff6b6b; }

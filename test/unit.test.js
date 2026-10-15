@@ -10,7 +10,7 @@ const { S_ROAD, S_RAIL, S_WIRE, S_RZONE, S_CZONE, S_IZONE, S_COAL, S_WIND, S_WTO
   S_BUSSTOP, S_SUBWAY, S_PORT, S_PIPE, S_HOTEL, S_AMUSE, S_PARK, S_POLICE, S_SCHOOL,
   S_HIGHWAY, S_LANDFILL, S_INCINER, S_RECYCLE, S_AIRPORT, S_NUCLEAR,
   S_TREATMENT, S_UNIVERSITY, S_FIREDEP, S_HOSPITAL, S_NONE, T_WATER,
-  S_RUNWAY, S_PIER } = M;
+  S_RUNWAY, S_PIER, S_LIBRARY, T_TREE, T_GRASS } = M;
 
 let pass = 0, fail = 0;
 function check(name, cond) {
@@ -943,6 +943,134 @@ section('Stadtname & Cheat-Flag im Spielstand');
   const s2 = Sim.load(s.serialize());
   check('cityName überlebt Save/Load', s2.cityName === 'Teststadt');
   check('cheated-Flag überlebt Save/Load', s2.cheated === true);
+}
+
+section('Neu: Aufforsten-Werkzeug & Stadtbäume');
+{
+  const s = new Sim(32, 32, 3); s.money = 1000;
+  const i = s.idx(10, 10); s.terr[i] = T_GRASS; s.st[i] = 0;
+  const r = s.plantTree(10, 10);
+  check('Baum auf Gras gepflanzt', r.ok && s.terr[i] === T_TREE && s.money === 1000 - BAL.TREE.COST);
+  check('Doppelt pflanzen abgelehnt', s.plantTree(10, 10).reason === 'err.exists');
+  s.terr[s.idx(11, 10)] = T_WATER;
+  check('Auf Wasser abgelehnt', s.plantTree(11, 10).reason === 'err.water');
+  // Landwert: Kachel neben vielen Bäumen > Kachel ohne Bäume
+  const a = new Sim(32, 32, 3);
+  for (let k = 0; k < 32 * 32; k++) { a.terr[k] = T_GRASS; a.st[k] = 0; }
+  a.computeWaterNear();
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (dx || dy) a.terr[a.idx(8 + dx, 8 + dy)] = T_TREE;
+  a.computeLandValue();
+  check('Stadtbäume heben den Landwert (' + a.landv[a.idx(20, 20)] + ' → ' + a.landv[a.idx(8, 8)] + ')',
+    a.landv[a.idx(8, 8)] > a.landv[a.idx(20, 20)]);
+}
+
+section('Neu: Stadtbibliothek');
+{
+  const s = new Sim(32, 32, 4); s.money = 100000; s.disasters = false;
+  for (let k = 0; k < 32 * 32; k++) { s.terr[k] = T_GRASS; s.st[k] = 0; }
+  check('Bibliothek vor 300 Einwohnern gesperrt', s.canPlace(S_LIBRARY, 10, 10).reason === 'err.minPop');
+  s.pop = 400;
+  check('Bibliothek gebaut', s.place(S_LIBRARY, 10, 10).ok);
+  s.place(S_WIND, 11, 10);
+  s.computePower(); s.computeStats();
+  const withLib = s.attraction;
+  s.bulldoze(10, 10); s.computePower(); s.computeStats();
+  check('Versorgte Bibliothek ist eine Attraktion (+' + (withLib - s.attraction) + ')', withLib - s.attraction === BAL.TOURISM.ATTRACT.library);
+}
+
+section('Neu: Verordnungen Tempo 30 & Solarförderung');
+{
+  const mk = (tempo) => {
+    const s = new Sim(32, 32, 5);
+    for (let k = 0; k < 32 * 32; k++) { s.terr[k] = T_GRASS; s.st[k] = 0; }
+    s.money = 1e5;
+    for (let x = 4; x < 28; x++) { s.place(S_ROAD, x, 16); s.traffic[s.idx(x, 16)] = 255; }
+    s.policies.tempo30 = tempo; s.computePollution();
+    let sum = 0; for (let x = 0; x < 32; x++) for (let y = 12; y <= 20; y++) sum += s.poll[s.idx(x, y)];
+    return sum;
+  };
+  const p0 = mk(false), p1 = mk(true);
+  check('Tempo 30 senkt Straßen-Smog (' + p0 + ' → ' + p1 + ')', p1 < p0);
+  const s = new Sim(32, 32, 6); s.year = 2005;
+  const base = s.solarPower(); s.policies.solarSub = true;
+  check('Solarförderung hebt den Solarertrag (' + base + ' → ' + s.solarPower() + ')', s.solarPower() > base);
+  s.pop = 1000; s.policies.tempo30 = true;
+  check('Neue Verordnungen kosten Geld', s.budgetCalc().policy > 0);
+}
+
+section('Neu: Stadtfest');
+{
+  const s = new Sim(32, 32, 7); s.money = 10000; s.pop = 1000; s.disasters = false;
+  const before = s.money;
+  s.computeStats(); const h0 = s.happiness;
+  const r = s.holdFestival();
+  check('Stadtfest kostet Geld', r.ok && s.money === before - r.cost);
+  check('Zweites Fest während eines laufenden abgelehnt', s.holdFestival().reason === 'err.festivalActive');
+  s.computeStats();
+  check('Stadtfest hebt die Laune (' + h0 + ' → ' + s.happiness + ')', s.happiness > h0);
+  for (let k = 0; k < BAL.FESTIVAL.MONTHS; k++) s.monthlyExtras();
+  check('Stadtfest endet nach ' + BAL.FESTIVAL.MONTHS + ' Monaten', s.festival === 0 && s.events.some(e => e.key === 'ev.festivalEnd'));
+}
+
+section('Neu: Stadtrang, Wahlen, Jahresrückblick');
+{
+  const s = new Sim(32, 32, 8);
+  check('Rang-Schwellen', s.rankFor(0) === 0 && s.rankFor(120) === 1 && s.rankFor(30000) === BAL.RANKS.length - 1);
+  s.pop = 600; s.month = 5; s.events = [];
+  s.monthlyExtras();
+  check('Aufstieg zum Rang „Kleinstadt" gemeldet', s.events.some(e => e.key === 'ev.rankUp' && e.params.rank === 'rank.2'));
+  s.events = []; s.monthlyExtras();
+  check('Rang-Aufstieg nur einmal', !s.events.some(e => e.key === 'ev.rankUp'));
+  // Wahl gewonnen
+  const w = new Sim(32, 32, 9); w.pop = 500; w.year = w.startYear + BAL.ELECTION.EVERY; w.month = 0;
+  w.approval = 80; const m0 = w.money; w.monthlyExtras();
+  check('Wiederwahl bringt Bonus', w.money >= m0 + BAL.ELECTION.BONUS && w.events.some(e => e.key === 'ev.electionWon'));
+  check('Jahresrückblick erscheint im Januar', w.events.some(e => e.key === 'ev.yearReview'));
+  // Wahl verloren → Steuern runter
+  const l = new Sim(32, 32, 10); l.pop = 500; l.year = l.startYear + BAL.ELECTION.EVERY; l.month = 0;
+  l.approval = 10; l.taxRate = 15; l.monthlyExtras();
+  check('Abwahl senkt die Steuern', l.taxRate === BAL.DEMAND.TAX_NEUTRAL && l.events.some(e => e.key === 'ev.electionLost'));
+  // Zustimmung wird aus der Stadt berechnet
+  const z = new Sim(32, 32, 11); z.pop = 0; z.computeStats();
+  check('Zustimmung liegt zwischen 0 und 100', z.approval >= 0 && z.approval <= 100);
+}
+
+section('Neu: Fördermittel & Erdbeben (deterministisch)');
+{
+  const s = new Sim(32, 32, 12); s.pop = 1000;
+  let found = -1;
+  for (let m = 0; m < 400 && found < 0; m++) { s.year = s.startYear + (m / 12 | 0); s.month = m % 12; if (s.evRoll(1) < BAL.GRANT.P) found = m; }
+  check('Fördermittel-Monat existiert', found >= 0);
+  const m0 = s.money; s.events = []; s.monthlyExtras();
+  check('Fördermittel gutgeschrieben', s.money > m0 && s.events.some(e => e.key === 'ev.grant'));
+  const quake = (seed) => {
+    const q = new Sim(32, 32, seed); q.money = 1e6;
+    for (let k = 0; k < 32 * 32; k++) { q.terr[k] = T_GRASS; q.st[k] = 0; }
+    for (let x = 8; x < 24; x++) for (let y = 8; y < 24; y++) { q.place(S_RZONE, x, y); q.lvl[q.idx(x, y)] = 2; }
+    const hit = q.spawnQuake();
+    let rubble = 0; for (let k = 0; k < 32 * 32; k++) if (q.st[k] === 14) rubble++;
+    return { hit, rubble };
+  };
+  const q1 = quake(42), q2 = quake(42);
+  check('Erdbeben zerstört Gebäude (' + q1.hit + ')', q1.hit > 0 && q1.rubble === q1.hit);
+  check('Erdbeben ist deterministisch', q1.hit === q2.hit);
+}
+
+section('Neu: Budget-Prognose & Speichern');
+{
+  const s = new Sim(48, 48, 1990); s.disasters = false;
+  buildCity(s);
+  for (let d = 0; d < 40; d++) s.tick();
+  s.computeStats();
+  const m0 = s.money, h0 = hashSim(s);
+  const fc = s.forecast(); s.forecast();
+  check('Prognose verändert den Zustand nicht', s.money === m0 && hashSim(s) === h0);
+  s.monthlyBudget();
+  check('Prognose = tatsächliches Monatsergebnis (' + fc + ')', s.lastBudget.net === fc);
+  s.pop = Math.max(s.pop, 10); s.holdFestival(); s.yearStart = { pop: 77, money: 1234 };
+  const s2 = Sim.load(s.serialize());
+  check('Stadtfest & Jahresstart überleben Save/Load', s2.festival === s.festival && s2.yearStart.pop === 77);
+  check('Zustands-Hash identisch (bitgenau)', hashSim(s2) === hashSim(s));
 }
 
 console.log('\n' + (fail === 0 ? '🎉' : '💥') + ' Unit-Tests: ' + pass + ' bestanden, ' + fail + ' fehlgeschlagen');
